@@ -7,12 +7,12 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/', include('api.urls')),
-    path('scheduler/', include('scheduler.urls')),
-    path('session/', include('session.urls')),
-    path('messaging/', include('messaging.urls')),
-    path('ocean/', include('ocean.urls')),
+    path('sapphire/admin/', admin.site.urls),
+    path('sapphire/api/', include('api.urls')),
+    path('sapphire/scheduler/', include('scheduler.urls')),
+    path('sapphire/session/', include('session.urls')),
+    path('sapphire/messaging/', include('messaging.urls')),
+    path('sapphire/ocean/', include('ocean.urls')),
 ]
 
 # Serve media files during development
