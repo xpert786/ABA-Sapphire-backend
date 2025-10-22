@@ -8,6 +8,6 @@ router = DefaultRouter()
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('chat/', ChatMessageViewSet.as_view({'post': 'send'}), name='chat'),
+    path('ws/chat/', ChatMessageViewSet.as_view({'post': 'send'}), name='ws-ws-chat'),
     path('alerts/', AlertViewSet.as_view({'get': 'my_alerts'}), name='alerts-list'),
 ]
