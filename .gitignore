@@ -84,3 +84,6 @@ Thumbs.db
 */migrations/
 !*/migrations/__init__.py  # Keep only init so Django recognizes the folder
 
+# Ignore Django migration files except __init__.py
+**/migrations/*
+!**/migrations/__init__.py
