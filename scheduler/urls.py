@@ -4,9 +4,9 @@ from .views import ClientListView, ClientDetailView, SessionListCreateView, Sess
 urlpatterns = [
     # Clients
     path('clients/', ClientListView.as_view(), name='clients-list'),
-    path('rbts/', RBTListView.as_view(), name='clients-list'),
-    path('bcbas/', BCBAListView.as_view(), name='clients-list'),
-    path('staffs/', StaffListView.as_view(), name='clients-list'),
+    path('rbts/', RBTListView.as_view(), name='rbts-list'),
+    path('bcbas/', BCBAListView.as_view(), name='bcbas-list'),
+    path('staffs/', StaffListView.as_view(), name='staffs-list'),
     path('clients/<int:pk>/', ClientDetailView.as_view(), name='clients-detail'),
 
     # Sessions
