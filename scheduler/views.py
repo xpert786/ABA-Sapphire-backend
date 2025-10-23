@@ -58,6 +58,21 @@ class BCBAListView(generics.ListAPIView):
         else:
             return CustomUser.objects.none()
 
+# Clients List - filtered by logged-in admin
+class StaffListView(generics.ListAPIView):
+    serializer_class = ClientSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        admin_user = self.request.user
+        if not admin_user.role:
+            return CustomUser.objects.none()
+        
+        if admin_user.role.name == "Admin":
+            return CustomUser.objects.filter(role__name__in=["BCBA", "RBT"], supervisor=admin_user).order_by('-id')
+        else:
+            return CustomUser.objects.none()
+
 # Client Detail - retrieve a single client
 class ClientDetailView(generics.RetrieveAPIView):
     serializer_class = ClientSerializer

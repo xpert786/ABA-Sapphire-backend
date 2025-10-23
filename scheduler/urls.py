@@ -1,11 +1,12 @@
 from django.urls import path
-from .views import ClientListView, ClientDetailView, SessionListCreateView, SessionDetailView, RBTListView, BCBAListView
+from .views import ClientListView, ClientDetailView, SessionListCreateView, SessionDetailView, RBTListView, BCBAListView, StaffListView
 
 urlpatterns = [
     # Clients
     path('clients/', ClientListView.as_view(), name='clients-list'),
     path('rbts/', RBTListView.as_view(), name='clients-list'),
     path('bcbas/', BCBAListView.as_view(), name='clients-list'),
+    path('staffs/', StaffListView.as_view(), name='clients-list'),
     path('clients/<int:pk>/', ClientDetailView.as_view(), name='clients-detail'),
 
     # Sessions
