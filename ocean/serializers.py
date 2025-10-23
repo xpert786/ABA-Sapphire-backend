@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import ChatMessage, Alert
+from .models import ChatMessage, Alert, SessionPrompt, SessionNoteFlow
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
@@ -12,4 +12,14 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 class AlertSerializer(serializers.ModelSerializer):
     class Meta:
         model = Alert
+        fields = '__all__'
+
+class SessionPromptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SessionPrompt
+        fields = '__all__'
+
+class SessionNoteFlowSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SessionNoteFlow
         fields = '__all__'

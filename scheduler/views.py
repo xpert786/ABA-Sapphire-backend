@@ -139,8 +139,8 @@ class SessionDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 def start_session(request, session_id):
     session = get_object_or_404(Session, id=session_id)
-    # Only the assigned RBT can start
-    if request.user != session.rbt:
+    # Only the assigned staff can start
+    if request.user != session.staff:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
     session.status = 'in_progress'
@@ -153,25 +153,49 @@ def start_session(request, session_id):
 
 def end_session(request, session_id):
     session = get_object_or_404(Session, id=session_id)
-    if request.user != session.rbt:
+    if request.user != session.staff:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    # Check if session note is completed before allowing session to end
+    from ocean.models import SessionNoteFlow
+    try:
+        note_flow = SessionNoteFlow.objects.get(session=session)
+        if not note_flow.final_note_submitted:
+            return JsonResponse({
+                'error': 'Session note must be completed before ending session',
+                'note_completed': note_flow.is_note_completed,
+                'note_finalized': note_flow.final_note_submitted,
+                'message': 'Please complete and finalize your session note before ending the session.'
+            }, status=400)
+    except SessionNoteFlow.DoesNotExist:
+        return JsonResponse({
+            'error': 'Session note flow not initialized',
+            'message': 'Please start the session note flow before ending the session.'
+        }, status=400)
 
     session.status = 'completed'
     session.save()
 
-    tracker = TimeTracker.objects.get(session=session)
-    tracker.end_time = timezone.now()
-    tracker.save()
+    # Update time tracker if it exists
+    try:
+        tracker = TimeTracker.objects.get(session=session)
+        tracker.end_time = timezone.now()
+        tracker.save()
+        
+        # Update duration in Session
+        session.duration = tracker.duration
+        session.save()
+    except TimeTracker.DoesNotExist:
+        pass
 
-    # Update duration in Session
-    session.duration_minutes = tracker.duration
-    session.save()
-
-    return JsonResponse({'message': 'Session ended', 'duration': tracker.duration})
+    return JsonResponse({
+        'message': 'Session ended successfully', 
+        'duration': getattr(tracker, 'duration', None) if 'tracker' in locals() else None
+    })
 
 def log_behavior(request, session_id):
     session = get_object_or_404(Session, id=session_id)
-    if request.user != session.rbt:
+    if request.user != session.staff:
         return JsonResponse({'error': 'Unauthorized'}, status=403)
 
     behavior = request.POST.get('behavior')

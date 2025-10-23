@@ -33,6 +33,13 @@ urlpatterns = [
     path('sessions/<int:session_id>/save-and-generate-notes/', views.save_session_data_and_generate_notes, name='save-and-generate-notes'),
     path('sessions/<int:session_id>/generate-notes/', views.generate_ai_session_notes, name='generate-ai-notes'),
     
+    # Ocean AI Integration endpoints
+    path('sessions/<int:session_id>/ocean-dashboard/', views.get_session_dashboard_with_ocean, name='ocean-dashboard'),
+    path('sessions/<int:session_id>/ocean-prompt/', views.create_ocean_prompt, name='create-ocean-prompt'),
+    path('sessions/<int:session_id>/ocean-prompt/<int:prompt_id>/respond/', views.respond_to_ocean_prompt, name='respond-ocean-prompt'),
+    path('sessions/<int:session_id>/ocean-ai-note/', views.generate_ocean_ai_note, name='generate-ocean-ai-note'),
+    path('sessions/<int:session_id>/ocean-finalize/', views.finalize_session_with_ocean, name='ocean-finalize'),
+    
     # Time Tracker endpoints
     path('time-trackers/', views.TimeTrackerView.as_view(), name='time-tracker-list'),
     path('time-trackers/<int:pk>/', views.TimeTrackerDetailView.as_view(), name='time-tracker-detail'),

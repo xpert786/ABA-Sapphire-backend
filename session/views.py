@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction, models
 from datetime import timedelta
+import json
 
 from .models import (
     Session, SessionTimer, AdditionalTime, PreSessionChecklist,
@@ -835,6 +836,548 @@ def save_session_data_and_generate_notes(request, session_id):
             {'error': f'Failed to generate notes: {str(e)}', 'saved_data': saved_data}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_session_dashboard_with_ocean(request, session_id):
+    """
+    Get comprehensive session dashboard with Ocean AI integration
+    Includes prompts, note flow status, and session validation
+    """
+    session = get_object_or_404(Session, id=session_id)
+    
+    # Check permissions
+    user = request.user
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name not in ['Admin', 'Superadmin']:
+            if role_name not in ['RBT', 'BCBA'] or session.staff != user:
+                return Response(
+                    {'error': 'You can only access your own sessions'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+    else:
+        return Response(
+            {'error': 'Only staff members can access session dashboard'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    try:
+        # Import Ocean models and functions
+        from ocean.models import SessionPrompt, SessionNoteFlow
+        from ocean.utils import generate_session_notes
+        
+        # Get or create note flow
+        note_flow, created = SessionNoteFlow.objects.get_or_create(session=session)
+        
+        # Get all prompts for this session
+        prompts = SessionPrompt.objects.filter(session=session).order_by('-created_at')
+        
+        # Get session timing info
+        now = timezone.now().time()
+        session_end = session.end_time
+        time_remaining = 0
+        if now < session_end:
+            time_remaining = (session_end.hour * 60 + session_end.minute) - (now.hour * 60 + now.minute)
+        
+        # Check if in final 15 minutes
+        in_final_15_minutes = time_remaining <= 15 and time_remaining > 0
+        
+        # Get pending prompts
+        pending_prompts = prompts.filter(is_responded=False)
+        
+        # Check session end eligibility
+        can_end_session = note_flow.final_note_submitted
+        
+        # Get session data for AI note generation
+        session_data = {
+            'session_info': {
+                'client': session.client.name if hasattr(session.client, 'name') else session.client.username,
+                'staff': session.staff.name if hasattr(session.staff, 'name') else session.staff.username,
+                'date': str(session.session_date),
+                'start_time': str(session.start_time),
+                'end_time': str(session.end_time),
+                'location': session.location or 'Not specified',
+                'service_type': session.service_type or 'ABA',
+                'status': session.status
+            },
+            'activities': [
+                {
+                    'name': a.activity_name,
+                    'duration': a.duration_minutes,
+                    'description': a.reinforcement_strategies,
+                    'response': a.notes or ''
+                }
+                for a in session.activities.all()
+            ],
+            'goals': [
+                {
+                    'goal': g.goal_description,
+                    'is_met': g.is_met,
+                    'implementation': g.implementation_method,
+                    'notes': g.notes or ''
+                }
+                for g in session.goal_progress.all()
+            ],
+            'abc_events': [
+                {
+                    'antecedent': e.antecedent,
+                    'behavior': e.behavior,
+                    'consequence': e.consequence
+                }
+                for e in session.abc_events.all()
+            ],
+            'reinforcement_strategies': [
+                {
+                    'type': s.strategy_type,
+                    'frequency': s.frequency,
+                    'pr_ratio': s.pr_ratio,
+                    'notes': s.notes
+                }
+                for s in session.reinforcement_strategies.all()
+            ],
+            'incidents': [
+                {
+                    'type': i.incident_type,
+                    'severity': i.behavior_severity,
+                    'description': i.description
+                }
+                for i in session.incidents.all()
+            ]
+        }
+        
+        return Response({
+            'session': {
+                'id': session.id,
+                'client': session.client.name if hasattr(session.client, 'name') else session.client.username,
+                'date': session.session_date,
+                'start_time': session.start_time,
+                'end_time': session.end_time,
+                'status': session.status,
+                'time_remaining_minutes': time_remaining,
+                'in_final_15_minutes': in_final_15_minutes
+            },
+            'ocean_integration': {
+                'note_flow': {
+                    'is_note_completed': note_flow.is_note_completed,
+                    'final_note_submitted': note_flow.final_note_submitted,
+                    'ai_generated_note': note_flow.ai_generated_note,
+                    'rbt_reviewed': note_flow.rbt_reviewed
+                },
+                'prompts': {
+                    'total': prompts.count(),
+                    'responded': prompts.filter(is_responded=True).count(),
+                    'pending': pending_prompts.count(),
+                    'list': [
+                        {
+                            'id': p.id,
+                            'type': p.prompt_type,
+                            'message': p.message,
+                            'response': p.response,
+                            'is_responded': p.is_responded,
+                            'created_at': p.created_at,
+                            'responded_at': p.responded_at
+                        }
+                        for p in prompts
+                    ]
+                },
+                'can_end_session': can_end_session,
+                'blocking_reasons': _get_blocking_reasons(note_flow, pending_prompts),
+                'recommendations': _get_session_recommendations(note_flow, prompts, time_remaining)
+            },
+            'session_data_summary': {
+                'activities_count': len(session_data['activities']),
+                'goals_count': len(session_data['goals']),
+                'abc_events_count': len(session_data['abc_events']),
+                'incidents_count': len(session_data['incidents'])
+            }
+        })
+        
+    except ImportError:
+        return Response(
+            {'error': 'Ocean AI module not available'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get session dashboard: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def create_ocean_prompt(request, session_id):
+    """
+    Create an Ocean AI prompt for the session
+    """
+    session = get_object_or_404(Session, id=session_id)
+    
+    # Check permissions
+    user = request.user
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name not in ['RBT', 'BCBA'] or session.staff != user:
+            return Response(
+                {'error': 'You can only create prompts for your own sessions'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+    else:
+        return Response(
+            {'error': 'Only staff members can create prompts'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    try:
+        from ocean.models import SessionPrompt
+        
+        prompt_type = request.data.get('prompt_type', 'engagement')
+        
+        # Define prompt messages based on type
+        prompt_messages = {
+            'engagement': "How is the session going? Are you hitting your targets today?",
+            'goal_check': "How are the client's goals progressing? Any notable achievements?",
+            'behavior_tracking': "Any significant behaviors to note? How is the client responding?",
+            'note_reminder': "Don't forget to document key observations for your session note.",
+            'session_wrap': "Here's what I've reviewed — would you like me to wrap up and generate your session note?"
+        }
+        
+        message = prompt_messages.get(prompt_type, prompt_messages['engagement'])
+        
+        # Create the prompt
+        prompt = SessionPrompt.objects.create(
+            session=session,
+            prompt_type=prompt_type,
+            message=message
+        )
+        
+        return Response({
+            'prompt': {
+                'id': prompt.id,
+                'type': prompt.prompt_type,
+                'message': prompt.message,
+                'is_responded': prompt.is_responded,
+                'created_at': prompt.created_at
+            },
+            'message': 'Ocean prompt created successfully'
+        }, status=status.HTTP_201_CREATED)
+        
+    except ImportError:
+        return Response(
+            {'error': 'Ocean AI module not available'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to create prompt: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def respond_to_ocean_prompt(request, session_id, prompt_id):
+    """
+    Respond to an Ocean AI prompt
+    """
+    session = get_object_or_404(Session, id=session_id)
+    
+    # Check permissions
+    user = request.user
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name not in ['RBT', 'BCBA'] or session.staff != user:
+            return Response(
+                {'error': 'You can only respond to prompts for your own sessions'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+    else:
+        return Response(
+            {'error': 'Only staff members can respond to prompts'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    try:
+        from ocean.models import SessionPrompt
+        
+        prompt = get_object_or_404(SessionPrompt, id=prompt_id, session=session)
+        response_text = request.data.get('response', '').strip()
+        
+        if not response_text:
+            return Response(
+                {'error': 'Response is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        prompt.response = response_text
+        prompt.is_responded = True
+        prompt.responded_at = timezone.now()
+        prompt.save()
+        
+        return Response({
+            'prompt': {
+                'id': prompt.id,
+                'type': prompt.prompt_type,
+                'message': prompt.message,
+                'response': prompt.response,
+                'is_responded': prompt.is_responded,
+                'responded_at': prompt.responded_at
+            },
+            'message': 'Response submitted successfully'
+        })
+        
+    except ImportError:
+        return Response(
+            {'error': 'Ocean AI module not available'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to respond to prompt: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def generate_ocean_ai_note(request, session_id):
+    """
+    Generate AI note using Ocean AI
+    """
+    session = get_object_or_404(Session, id=session_id)
+    
+    # Check permissions
+    user = request.user
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name not in ['RBT', 'BCBA'] or session.staff != user:
+            return Response(
+                {'error': 'You can only generate notes for your own sessions'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+    else:
+        return Response(
+            {'error': 'Only staff members can generate notes'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    try:
+        from ocean.models import SessionNoteFlow
+        from ocean.utils import generate_session_notes
+        
+        # Get or create note flow
+        note_flow, created = SessionNoteFlow.objects.get_or_create(session=session)
+        
+        # Gather comprehensive session data
+        session_data = {
+            'session_info': {
+                'client': session.client.name if hasattr(session.client, 'name') else session.client.username,
+                'staff': session.staff.name if hasattr(session.staff, 'name') else session.staff.username,
+                'date': str(session.session_date),
+                'start_time': str(session.start_time),
+                'end_time': str(session.end_time),
+                'location': session.location or 'Not specified',
+                'service_type': session.service_type or 'ABA',
+                'status': session.status
+            },
+            'activities': [
+                {
+                    'name': a.activity_name,
+                    'duration': a.duration_minutes,
+                    'description': a.reinforcement_strategies,
+                    'response': a.notes or ''
+                }
+                for a in session.activities.all()
+            ],
+            'goals': [
+                {
+                    'goal': g.goal_description,
+                    'is_met': g.is_met,
+                    'implementation': g.implementation_method,
+                    'notes': g.notes or ''
+                }
+                for g in session.goal_progress.all()
+            ],
+            'abc_events': [
+                {
+                    'antecedent': e.antecedent,
+                    'behavior': e.behavior,
+                    'consequence': e.consequence
+                }
+                for e in session.abc_events.all()
+            ],
+            'reinforcement_strategies': [
+                {
+                    'type': s.strategy_type,
+                    'frequency': s.frequency,
+                    'pr_ratio': s.pr_ratio,
+                    'notes': s.notes
+                }
+                for s in session.reinforcement_strategies.all()
+            ],
+            'incidents': [
+                {
+                    'type': i.incident_type,
+                    'severity': i.behavior_severity,
+                    'description': i.description
+                }
+                for i in session.incidents.all()
+            ]
+        }
+        
+        # Generate AI note
+        ai_note = generate_session_notes(session_data)
+        
+        # Save AI note to note flow
+        note_flow.ai_generated_note = ai_note
+        note_flow.save()
+        
+        return Response({
+            'ai_generated_note': ai_note,
+            'session_data_summary': {
+                'activities_count': len(session_data['activities']),
+                'goals_count': len(session_data['goals']),
+                'abc_events_count': len(session_data['abc_events']),
+                'incidents_count': len(session_data['incidents'])
+            },
+            'message': 'AI note generated successfully'
+        })
+        
+    except ImportError:
+        return Response(
+            {'error': 'Ocean AI module not available'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to generate AI note: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def finalize_session_with_ocean(request, session_id):
+    """
+    Finalize session with Ocean AI note flow validation
+    """
+    session = get_object_or_404(Session, id=session_id)
+    
+    # Check permissions
+    user = request.user
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name not in ['RBT', 'BCBA'] or session.staff != user:
+            return Response(
+                {'error': 'You can only finalize your own sessions'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+    else:
+        return Response(
+            {'error': 'Only staff members can finalize sessions'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    try:
+        from ocean.models import SessionNoteFlow
+        
+        # Get note flow
+        note_flow, created = SessionNoteFlow.objects.get_or_create(session=session)
+        
+        # Check if note is completed
+        if not note_flow.is_note_completed:
+            return Response({
+                'can_finalize': False,
+                'error': 'Session note must be completed before finalizing',
+                'required_actions': [
+                    'Complete session note content',
+                    'Review and finalize session note',
+                    'Submit final session note'
+                ],
+                'note_flow_status': {
+                    'is_note_completed': note_flow.is_note_completed,
+                    'final_note_submitted': note_flow.final_note_submitted
+                }
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Finalize note flow
+        note_flow.final_note_submitted = True
+        note_flow.save()
+        
+        # Update session with final note
+        if note_flow.ai_generated_note:
+            session.session_notes = note_flow.ai_generated_note
+        elif note_flow.note_content:
+            session.session_notes = note_flow.note_content
+        
+        session.status = 'completed'
+        session.save()
+        
+        return Response({
+            'can_finalize': True,
+            'message': 'Session finalized successfully',
+            'note_flow_status': {
+                'is_note_completed': note_flow.is_note_completed,
+                'final_note_submitted': note_flow.final_note_submitted,
+                'ai_generated_note': note_flow.ai_generated_note
+            }
+        })
+        
+    except ImportError:
+        return Response(
+            {'error': 'Ocean AI module not available'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to finalize session: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+def _get_blocking_reasons(note_flow, pending_prompts):
+    """Get detailed reasons why session cannot be ended"""
+    reasons = []
+    
+    if not note_flow.is_note_completed:
+        reasons.append("Session note is not completed")
+    
+    if not note_flow.final_note_submitted:
+        reasons.append("Session note is not finalized")
+    
+    if pending_prompts.count() > 0:
+        reasons.append(f"{pending_prompts.count()} pending prompts need responses")
+    
+    return reasons
+
+
+def _get_session_recommendations(note_flow, prompts, time_remaining):
+    """Get recommendations for the RBT based on session state"""
+    recommendations = []
+    
+    if not note_flow.is_note_completed:
+        recommendations.append("Complete your session note to document today's progress")
+    
+    if not note_flow.final_note_submitted:
+        recommendations.append("Review and finalize your session note before ending")
+    
+    pending_prompts = prompts.filter(is_responded=False)
+    if pending_prompts.exists():
+        recommendations.append(f"Respond to {pending_prompts.count()} pending prompts")
+    
+    if time_remaining <= 15 and time_remaining > 0:
+        recommendations.append("Session ending soon - consider wrapping up activities")
+    
+    if time_remaining <= 0:
+        recommendations.append("Session time has ended - complete your notes and end session")
+    
+    return recommendations
 
 
 @api_view(['POST'])

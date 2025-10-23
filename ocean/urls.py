@@ -1,10 +1,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ChatMessageViewSet, AlertViewSet
+from .views import ChatMessageViewSet, AlertViewSet, SessionPromptViewSet, SessionNoteFlowViewSet
 
 router = DefaultRouter()
-# router.register(r'chat', ChatMessageViewSet, basename="chat")
-# router.register(r'alerts', AlertViewSet, basename="alerts")
+router.register(r'session-prompts', SessionPromptViewSet, basename="session-prompts")
+router.register(r'session-notes', SessionNoteFlowViewSet, basename="session-notes")
 
 urlpatterns = [
     path('', include(router.urls)),
