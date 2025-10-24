@@ -20,10 +20,22 @@ class TreatmentPlan(models.Model):
         ('rejected', 'Rejected'),
     ]
     
+    PLAN_TYPE_CHOICES = [
+        ('comprehensive_aba', 'Comprehensive ABA'),
+        ('behavior_reduction_focus', 'Behavior Reduction Focus'),
+        ('social_skills_development', 'Social Skills Development'),
+        ('communication_language', 'Communication & Language'),
+        ('early_intervention', 'Early Intervention'),
+        ('school_based_support', 'School-Based Support'),
+        ('parent_training_focus', 'Parent Training Focus'),
+        ('transition_planning', 'Transition Planning'),
+    ]
+    
     # Basic Information
     client_name = models.CharField(max_length=255, help_text="Name of the client")
     client_id = models.CharField(max_length=100, unique=True, help_text="Unique client identifier")
     bcba = models.ForeignKey(User, on_delete=models.CASCADE, related_name='treatment_plans', help_text="BCBA creating the plan")
+    plan_type = models.CharField(max_length=50, choices=PLAN_TYPE_CHOICES, help_text="Type of treatment plan")
     
     # Assessment Summary
     assessment_tools_used = models.TextField(help_text="Assessment tools used (e.g., VB-MAPP, FBA, Clinical Observation)")

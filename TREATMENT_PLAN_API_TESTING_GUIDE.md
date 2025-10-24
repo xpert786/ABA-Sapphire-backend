@@ -47,8 +47,8 @@ curl -X POST http://localhost:8000/sapphire/treatment-plan/plans/ \
   -H "Authorization: Bearer <your_access_token>" \
   -d '{
     "client_name": "John Doe",
-    "client_id": "CLIENT001",
-    "bcba": 1,
+    "client_id": "4",
+    "bcba": 6,
     "assessment_tools_used": "VB-MAPP, FBA, Clinical Observation",
     "client_strengths": "Strong visual matching skills, motivated by token economy, responds well to social praise",
     "areas_of_need": "Transitioning between activities, emotional regulation, social skills, functional communication",

@@ -11,16 +11,16 @@ class TreatmentGoalInline(admin.TabularInline):
 @admin.register(TreatmentPlan)
 class TreatmentPlanAdmin(admin.ModelAdmin):
     list_display = [
-        'client_name', 'client_id', 'bcba', 'status', 'priority', 
+        'client_name', 'client_id', 'bcba', 'plan_type', 'status', 'priority', 
         'created_at', 'get_goals_count'
     ]
-    list_filter = ['status', 'priority', 'created_at', 'bcba']
+    list_filter = ['status', 'priority', 'plan_type', 'created_at', 'bcba']
     search_fields = ['client_name', 'client_id', 'bcba__username', 'bcba__email']
     readonly_fields = ['created_at', 'updated_at', 'submitted_at', 'approved_at']
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('client_name', 'client_id', 'bcba', 'status', 'priority')
+            'fields': ('client_name', 'client_id', 'bcba', 'plan_type', 'status', 'priority')
         }),
         ('Assessment Summary', {
             'fields': ('assessment_tools_used', 'client_strengths', 'areas_of_need'),
