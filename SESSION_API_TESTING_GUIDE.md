@@ -244,6 +244,7 @@ curl -X GET http://localhost:8000/sapphire/session/treatment-plan/4/session-data
 - **RBT/BCBA**: Can access treatment plans for their assigned clients
 - **Admin/Superadmin**: Can access any client's treatment plan
 - **Other roles**: Cannot access this endpoint
+- **Status**: Gets the most recent treatment plan regardless of status (draft, pending, approved, etc.)
 
 ## 3. Session Timer Endpoints
 

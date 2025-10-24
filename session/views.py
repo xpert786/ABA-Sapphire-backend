@@ -876,11 +876,15 @@ def get_treatment_plan_for_session(request, client_id):
                         status=status.HTTP_403_FORBIDDEN
                     )
         
-        # Get the most recent approved treatment plan for this client
+        # Get the most recent treatment plan for this client (any status)
         treatment_plan = TreatmentPlan.objects.filter(
-            client_id=client_id,
-            status='approved'
+            client_id=client_id
         ).order_by('-created_at').first()
+        
+        # Debug: Check what treatment plans exist for this client
+        all_plans = TreatmentPlan.objects.filter(client_id=client_id).values(
+            'id', 'status', 'plan_type', 'created_at'
+        ).order_by('-created_at')
         
         if not treatment_plan:
             return Response({
@@ -890,7 +894,12 @@ def get_treatment_plan_for_session(request, client_id):
                     'username': client.username
                 },
                 'treatment_plan': None,
-                'message': 'No approved treatment plan found for this client'
+                'message': 'No treatment plan found for this client',
+                'debug_info': {
+                    'client_id': client_id,
+                    'all_plans': list(all_plans),
+                    'total_plans': len(all_plans)
+                }
             })
         
         # Get treatment goals
@@ -1000,6 +1009,7 @@ def get_treatment_plan_for_session(request, client_id):
             'treatment_plan': {
                 'id': treatment_plan.id,
                 'plan_type': treatment_plan.plan_type,
+                'status': treatment_plan.status,
                 'client_strengths': treatment_plan.client_strengths,
                 'areas_of_need': treatment_plan.areas_of_need,
                 'assessment_tools': treatment_plan.assessment_tools_used,
