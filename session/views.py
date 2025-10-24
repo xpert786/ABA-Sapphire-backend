@@ -634,13 +634,20 @@ def get_bcba_clients(request):
                     role__name__in=['Clients/Parent', 'Client']
                 ).select_related('role').order_by('first_name', 'last_name')
             else:
-                # BCBA can only see their own clients
-                # Get clients from sessions where this user is the staff
-                client_ids = Session.objects.filter(staff=user).values_list('client_id', flat=True).distinct()
+                # BCBA can see clients assigned to them
+                # First try to get clients assigned via supervisor field
                 clients = User.objects.filter(
-                    id__in=client_ids,
+                    supervisor=user,
                     role__name__in=['Clients/Parent', 'Client']
                 ).select_related('role').order_by('first_name', 'last_name')
+                
+                # If no clients found via supervisor field, fall back to session history
+                if not clients.exists():
+                    client_ids = Session.objects.filter(staff=user).values_list('client_id', flat=True).distinct()
+                    clients = User.objects.filter(
+                        id__in=client_ids,
+                        role__name__in=['Clients/Parent', 'Client']
+                    ).select_related('role').order_by('first_name', 'last_name')
         else:
             clients = User.objects.none()
         
@@ -648,35 +655,70 @@ def get_bcba_clients(request):
         client_list = []
         for client in clients:
             # Get session statistics for this client
-            total_sessions = Session.objects.filter(client=client, staff=user).count()
-            completed_sessions = Session.objects.filter(
-                client=client, 
-                staff=user, 
-                status='completed'
-            ).count()
+            # Use the assigned BCBA relationship for more accurate data
+            if hasattr(client, 'supervisor') and client.supervisor == user:
+                # Client is directly assigned to this BCBA
+                total_sessions = Session.objects.filter(client=client, staff=user).count()
+                completed_sessions = Session.objects.filter(
+                    client=client, 
+                    staff=user, 
+                    status='completed'
+                ).count()
+                
+                # Get recent sessions (last 30 days)
+                from datetime import timedelta
+                recent_date = timezone.now().date() - timedelta(days=30)
+                recent_sessions = Session.objects.filter(
+                    client=client,
+                    staff=user,
+                    session_date__gte=recent_date
+                ).count()
+                
+                # Get upcoming sessions
+                upcoming_sessions = Session.objects.filter(
+                    client=client,
+                    staff=user,
+                    session_date__gte=timezone.now().date(),
+                    status__in=['scheduled', 'in_progress']
+                ).count()
+                
+                # Get last session date
+                last_session = Session.objects.filter(
+                    client=client,
+                    staff=user
+                ).order_by('-session_date').first()
+            else:
+                # Fallback to session-based statistics
+                total_sessions = Session.objects.filter(client=client, staff=user).count()
+                completed_sessions = Session.objects.filter(
+                    client=client, 
+                    staff=user, 
+                    status='completed'
+                ).count()
+                
+                from datetime import timedelta
+                recent_date = timezone.now().date() - timedelta(days=30)
+                recent_sessions = Session.objects.filter(
+                    client=client,
+                    staff=user,
+                    session_date__gte=recent_date
+                ).count()
+                
+                upcoming_sessions = Session.objects.filter(
+                    client=client,
+                    staff=user,
+                    session_date__gte=timezone.now().date(),
+                    status__in=['scheduled', 'in_progress']
+                ).count()
+                
+                last_session = Session.objects.filter(
+                    client=client,
+                    staff=user
+                ).order_by('-session_date').first()
             
-            # Get recent sessions (last 30 days)
-            from datetime import timedelta
-            recent_date = timezone.now().date() - timedelta(days=30)
-            recent_sessions = Session.objects.filter(
-                client=client,
-                staff=user,
-                session_date__gte=recent_date
-            ).count()
-            
-            # Get upcoming sessions
-            upcoming_sessions = Session.objects.filter(
-                client=client,
-                staff=user,
-                session_date__gte=timezone.now().date(),
-                status__in=['scheduled', 'in_progress']
-            ).count()
-            
-            # Get last session date
-            last_session = Session.objects.filter(
-                client=client,
-                staff=user
-            ).order_by('-session_date').first()
+            # Check assignment status
+            is_directly_assigned = hasattr(client, 'supervisor') and client.supervisor == user
+            assignment_status = "directly_assigned" if is_directly_assigned else "session_based"
             
             client_info = {
                 'id': int(client.id),
@@ -692,6 +734,8 @@ def get_bcba_clients(request):
                     'id': client.role.id if hasattr(client, 'role') and client.role else None,
                     'name': client.role.name if hasattr(client, 'role') and client.role else 'No role'
                 },
+                'assignment_status': assignment_status,
+                'is_directly_assigned': is_directly_assigned,
                 'session_statistics': {
                     'total_sessions': total_sessions,
                     'completed_sessions': completed_sessions,

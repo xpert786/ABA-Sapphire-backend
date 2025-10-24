@@ -224,7 +224,7 @@ curl -X GET http://localhost:8000/sapphire/session/bcba/clients/ \
 - Headers: `Authorization: Bearer <bcba_access_token>`
 
 **Note:** 
-- **BCBA**: Can only see their own clients (clients they have sessions with)
+- **BCBA**: Can see clients assigned to them via supervisor field, with fallback to session history
 - **Admin/Superadmin**: Can see all clients
 - **Other roles**: Cannot access this endpoint
 
@@ -599,6 +599,8 @@ curl -X POST http://localhost:8000/sapphire/session/sessions/2/save-and-generate
         "id": 3,
         "name": "Clients/Parent"
       },
+      "assignment_status": "directly_assigned",
+      "is_directly_assigned": true,
       "session_statistics": {
         "total_sessions": 15,
         "completed_sessions": 12,
@@ -623,6 +625,8 @@ curl -X POST http://localhost:8000/sapphire/session/sessions/2/save-and-generate
         "id": 3,
         "name": "Clients/Parent"
       },
+      "assignment_status": "session_based",
+      "is_directly_assigned": false,
       "session_statistics": {
         "total_sessions": 8,
         "completed_sessions": 6,
