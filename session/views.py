@@ -1032,6 +1032,216 @@ def get_treatment_plan_for_session(request, client_id):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_session_treatment_plan_data(request, session_id):
+    """API endpoint for RBTs to get treatment plan data when starting a session"""
+    user = request.user
+    
+    # Check if user is RBT, BCBA, or admin
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name not in ['RBT', 'BCBA', 'Admin', 'Superadmin']:
+            return Response(
+                {'error': 'Only RBTs, BCBAs, and administrators can access session treatment plan data'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+    else:
+        return Response(
+            {'error': 'User role not found'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    try:
+        from django.contrib.auth import get_user_model
+        from treatment_plan.models import TreatmentPlan, TreatmentGoal
+        
+        User = get_user_model()
+        
+        # Get the session
+        try:
+            session = Session.objects.get(id=session_id)
+        except Session.DoesNotExist:
+            return Response(
+                {'error': 'Session not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if user has permission to access this session
+        if hasattr(user, 'role') and user.role:
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            
+            if role_name not in ['Admin', 'Superadmin']:
+                # RBT/BCBA can only access their own sessions
+                if session.staff != user and session.client != user:
+                    return Response(
+                        {'error': 'You can only access your own sessions'}, 
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+        
+        # Get the client from the session
+        client = session.client
+        
+        # Get the most recent treatment plan for this client
+        treatment_plan = TreatmentPlan.objects.filter(
+            client_id=client.id
+        ).order_by('-created_at').first()
+        
+        if not treatment_plan:
+            return Response({
+                'session': {
+                    'id': session.id,
+                    'client_name': client.get_full_name() or client.username,
+                    'session_date': session.session_date.isoformat() if session.session_date else None,
+                    'start_time': session.start_time.isoformat() if session.start_time else None,
+                    'end_time': session.end_time.isoformat() if session.end_time else None,
+                    'status': session.status
+                },
+                'treatment_plan': None,
+                'message': 'No treatment plan found for this client'
+            })
+        
+        # Get treatment goals
+        goals = TreatmentGoal.objects.filter(
+            treatment_plan=treatment_plan
+        ).order_by('priority', 'created_at')
+        
+        # Format goals for RBT session form
+        formatted_goals = []
+        for goal in goals:
+            formatted_goals.append({
+                'id': goal.id,
+                'description': goal.goal_description,
+                'mastery_criteria': goal.mastery_criteria,
+                'custom_mastery_criteria': goal.custom_mastery_criteria,
+                'priority': goal.priority,
+                'is_achieved': goal.is_achieved,
+                'progress_notes': goal.progress_notes
+            })
+        
+        # Create pre-session checklist items based on treatment plan
+        checklist_items = [
+            {
+                'id': 'materials_prepared',
+                'name': 'Materials Prepared',
+                'description': 'Picture Cards, Tokens, Toys',
+                'is_completed': False
+            },
+            {
+                'id': 'treatment_plan_reviewed',
+                'name': 'Treatment Plan Reviewed',
+                'description': f'Review plan: {treatment_plan.plan_type}',
+                'is_completed': False
+            },
+            {
+                'id': 'environment_setup',
+                'name': 'Environment Setup Complete',
+                'description': 'Quiet, distraction-free environment',
+                'is_completed': False
+            },
+            {
+                'id': 'data_collection_ready',
+                'name': 'Data Collection Sheets Ready',
+                'description': treatment_plan.data_collection_methods,
+                'is_completed': False
+            }
+        ]
+        
+        # Create suggested activities based on treatment plan
+        suggested_activities = [
+            {
+                'id': 'discrete_trial_training',
+                'name': 'Discrete Trial Training',
+                'description': 'Structured learning trials',
+                'estimated_duration': 15
+            },
+            {
+                'id': 'natural_environment_training',
+                'name': 'Natural Environment Training',
+                'description': 'Learning in natural settings',
+                'estimated_duration': 20
+            },
+            {
+                'id': 'social_skills_practice',
+                'name': 'Social Skills Practice',
+                'description': 'Peer interaction and social skills',
+                'estimated_duration': 10
+            }
+        ]
+        
+        # Create reinforcement strategies based on treatment plan
+        reinforcement_strategies = [
+            {
+                'id': 'token_economy',
+                'name': 'Token Economy',
+                'description': treatment_plan.reinforcement_strategies,
+                'effectiveness_scale': '1-5'
+            },
+            {
+                'id': 'social_praise',
+                'name': 'Social Praise',
+                'description': 'Verbal and physical praise',
+                'effectiveness_scale': '1-5'
+            },
+            {
+                'id': 'preferred_items',
+                'name': 'Preferred Items',
+                'description': 'Access to preferred activities/items',
+                'effectiveness_scale': '1-5'
+            }
+        ]
+        
+        # Create intervention strategies
+        intervention_strategies = {
+            'prompting_hierarchy': treatment_plan.prompting_hierarchy,
+            'behavior_interventions': treatment_plan.behavior_interventions,
+            'reinforcement_strategies': treatment_plan.reinforcement_strategies
+        }
+        
+        # Create assessment summary data
+        assessment_summary = {
+            'assessment_tools_used': treatment_plan.assessment_tools_used,
+            'client_strengths': treatment_plan.client_strengths,
+            'areas_of_need': treatment_plan.areas_of_need
+        }
+        
+        return Response({
+            'session': {
+                'id': session.id,
+                'client_name': client.get_full_name() or client.username,
+                'client_id': client.id,
+                'session_date': session.session_date.isoformat() if session.session_date else None,
+                'start_time': session.start_time.isoformat() if session.start_time else None,
+                'end_time': session.end_time.isoformat() if session.end_time else None,
+                'status': session.status,
+                'location': getattr(session, 'location', ''),
+                'notes': getattr(session, 'notes', '')
+            },
+            'treatment_plan': {
+                'id': treatment_plan.id,
+                'plan_type': treatment_plan.plan_type,
+                'status': treatment_plan.status,
+                'created_at': treatment_plan.created_at.isoformat(),
+                'updated_at': treatment_plan.updated_at.isoformat()
+            },
+            'session_form_data': {
+                'pre_session_checklist': checklist_items,
+                'goals': formatted_goals,
+                'suggested_activities': suggested_activities,
+                'reinforcement_strategies': reinforcement_strategies,
+                'intervention_strategies': intervention_strategies,
+                'assessment_summary': assessment_summary,
+                'data_collection_methods': treatment_plan.data_collection_methods
+            }
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get session treatment plan data: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
 class TimeTrackerView(generics.ListCreateAPIView):
     """API view for listing and creating time tracker entries"""
     permission_classes = [permissions.IsAuthenticated]

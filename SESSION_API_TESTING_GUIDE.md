@@ -246,6 +246,25 @@ curl -X GET http://localhost:8000/sapphire/session/treatment-plan/4/session-data
 - **Other roles**: Cannot access this endpoint
 - **Status**: Gets the most recent treatment plan regardless of status (draft, pending, approved, etc.)
 
+### 2.11 Get Treatment Plan Data for Specific Session
+
+```bash
+curl -X GET http://localhost:8000/sapphire/session/sessions/5/treatment-plan-data/ \
+  -H "Authorization: Bearer <rbt_access_token>"
+```
+
+**Postman:**
+- Method: GET
+- URL: `http://localhost:8000/sapphire/session/sessions/5/treatment-plan-data/`
+- Headers: `Authorization: Bearer <rbt_access_token>`
+
+**Note:** 
+- **RBT/BCBA**: Can access treatment plan data for their own sessions
+- **Admin/Superadmin**: Can access any session's treatment plan data
+- **Other roles**: Cannot access this endpoint
+- **Session-based**: Gets treatment plan data for a specific session
+- **Complete Data**: Includes session details, treatment plan, and form data
+
 ## 3. Session Timer Endpoints
 
 ### 3.1 Get Session Timer
@@ -769,6 +788,96 @@ curl -X POST http://localhost:8000/sapphire/session/sessions/2/save-and-generate
       "prompting_hierarchy": "Least-to-most prompting: Independent -> Visual -> Gestural -> Verbal -> Physical",
       "behavior_interventions": "Antecedent interventions: visual schedules, first-then boards, choice offering. Consequence strategies: differential reinforcement, extinction, functional communication training",
       "reinforcement_strategies": "Token economy system, social praise, preferred items, break cards"
+    },
+    "data_collection_methods": "Frequency counting for problem behavior, percentage correct for skill acquisition goals, ABC data for antecedent-behavior-consequence analysis, duration data for engagement"
+  }
+}
+```
+
+### Session Treatment Plan Data Response
+```json
+{
+  "session": {
+    "id": 5,
+    "client_name": "John Doe",
+    "client_id": 4,
+    "session_date": "2024-01-15T00:00:00Z",
+    "start_time": "2024-01-15T09:00:00Z",
+    "end_time": "2024-01-15T10:00:00Z",
+    "status": "scheduled",
+    "location": "123 Willow Creek Drive, Denver, CO 80202",
+    "notes": ""
+  },
+  "treatment_plan": {
+    "id": 1,
+    "plan_type": "comprehensive_aba",
+    "status": "approved",
+    "created_at": "2024-01-01T08:00:00Z",
+    "updated_at": "2024-01-15T10:30:00Z"
+  },
+  "session_form_data": {
+    "pre_session_checklist": [
+      {
+        "id": "materials_prepared",
+        "name": "Materials Prepared",
+        "description": "Picture Cards, Tokens, Toys",
+        "is_completed": false
+      },
+      {
+        "id": "treatment_plan_reviewed",
+        "name": "Treatment Plan Reviewed",
+        "description": "Review plan: comprehensive_aba",
+        "is_completed": false
+      },
+      {
+        "id": "environment_setup",
+        "name": "Environment Setup Complete",
+        "description": "Quiet, distraction-free environment",
+        "is_completed": false
+      },
+      {
+        "id": "data_collection_ready",
+        "name": "Data Collection Sheets Ready",
+        "description": "Frequency counting for problem behavior, percentage correct for skill acquisition goals",
+        "is_completed": false
+      }
+    ],
+    "goals": [
+      {
+        "id": 1,
+        "description": "Client will request help using PECS in 8/10 opportunities across 3 different activities",
+        "mastery_criteria": "8/10_opportunities",
+        "custom_mastery_criteria": "",
+        "priority": "medium",
+        "is_achieved": false,
+        "progress_notes": ""
+      }
+    ],
+    "suggested_activities": [
+      {
+        "id": "discrete_trial_training",
+        "name": "Discrete Trial Training",
+        "description": "Structured learning trials",
+        "estimated_duration": 15
+      }
+    ],
+    "reinforcement_strategies": [
+      {
+        "id": "token_economy",
+        "name": "Token Economy",
+        "description": "Token economy system, social praise, preferred items, break cards",
+        "effectiveness_scale": "1-5"
+      }
+    ],
+    "intervention_strategies": {
+      "prompting_hierarchy": "Least-to-most prompting: Independent -> Visual -> Gestural -> Verbal -> Physical",
+      "behavior_interventions": "Antecedent interventions: visual schedules, first-then boards, choice offering",
+      "reinforcement_strategies": "Token economy system, social praise, preferred items, break cards"
+    },
+    "assessment_summary": {
+      "assessment_tools_used": "VB-MAPP, FBA, Clinical Observation",
+      "client_strengths": "Strong visual matching skills, motivated by token economy",
+      "areas_of_need": "Transitioning between activities, emotional regulation"
     },
     "data_collection_methods": "Frequency counting for problem behavior, percentage correct for skill acquisition goals, ABC data for antecedent-behavior-consequence analysis, duration data for engagement"
   }

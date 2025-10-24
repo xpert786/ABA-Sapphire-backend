@@ -18,6 +18,7 @@ urlpatterns = [
     path('users/<int:user_id>/details/', views.get_user_details, name='user-details'),
     path('bcba/clients/', views.get_bcba_clients, name='bcba-clients'),
     path('treatment-plan/<int:client_id>/session-data/', views.get_treatment_plan_for_session, name='treatment-plan-session-data'),
+    path('sessions/<int:session_id>/treatment-plan-data/', views.get_session_treatment_plan_data, name='session-treatment-plan-data'),
     
     # Session timer endpoints
     path('sessions/<int:session_id>/timer/', views.SessionTimerView.as_view(), name='session-timer'),
