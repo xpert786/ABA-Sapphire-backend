@@ -1089,17 +1089,82 @@ def get_session_treatment_plan_data(request, session_id):
         ).order_by('-created_at').first()
         
         if not treatment_plan:
+            # Debug: Check what treatment plans exist for this client
+            all_plans = TreatmentPlan.objects.filter(client_id=client.id).values(
+                'id', 'status', 'plan_type', 'created_at'
+            ).order_by('-created_at')
+            
             return Response({
                 'session': {
                     'id': session.id,
                     'client_name': client.get_full_name() or client.username,
+                    'client_id': client.id,
                     'session_date': session.session_date.isoformat() if session.session_date else None,
                     'start_time': session.start_time.isoformat() if session.start_time else None,
                     'end_time': session.end_time.isoformat() if session.end_time else None,
-                    'status': session.status
+                    'status': session.status,
+                    'location': getattr(session, 'location', ''),
+                    'notes': getattr(session, 'notes', '')
                 },
                 'treatment_plan': None,
-                'message': 'No treatment plan found for this client'
+                'message': 'No treatment plan found for this client',
+                'session_form_data': {
+                    'pre_session_checklist': [
+                        {
+                            'id': 'materials_prepared',
+                            'name': 'Materials Prepared',
+                            'description': 'Picture Cards, Tokens, Toys',
+                            'is_completed': False
+                        },
+                        {
+                            'id': 'environment_setup',
+                            'name': 'Environment Setup Complete',
+                            'description': 'Quiet, distraction-free environment',
+                            'is_completed': False
+                        },
+                        {
+                            'id': 'data_collection_ready',
+                            'name': 'Data Collection Sheets Ready',
+                            'description': 'Basic data collection forms',
+                            'is_completed': False
+                        }
+                    ],
+                    'goals': [],
+                    'suggested_activities': [
+                        {
+                            'id': 'general_activities',
+                            'name': 'General Activities',
+                            'description': 'Basic therapeutic activities',
+                            'estimated_duration': 30
+                        }
+                    ],
+                    'reinforcement_strategies': [
+                        {
+                            'id': 'social_praise',
+                            'name': 'Social Praise',
+                            'description': 'Verbal and physical praise',
+                            'effectiveness_scale': '1-5'
+                        }
+                    ],
+                    'intervention_strategies': {
+                        'prompting_hierarchy': 'General prompting approach',
+                        'behavior_interventions': 'Basic behavior management strategies',
+                        'reinforcement_strategies': 'Social praise and preferred items'
+                    },
+                    'assessment_summary': {
+                        'assessment_tools_used': 'Basic observation and assessment',
+                        'client_strengths': 'To be determined through session',
+                        'areas_of_need': 'To be identified during session'
+                    },
+                    'data_collection_methods': 'Basic frequency and duration data collection'
+                },
+                'debug_info': {
+                    'client_id': client.id,
+                    'client_username': client.username,
+                    'all_plans': list(all_plans),
+                    'total_plans': len(all_plans),
+                    'suggestion': 'Create a treatment plan for this client using the Treatment Plan API'
+                }
             })
         
         # Get treatment goals
