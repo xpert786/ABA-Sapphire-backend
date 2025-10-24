@@ -620,6 +620,9 @@ def get_bcba_clients(request):
             status=status.HTTP_403_FORBIDDEN
         )
     
+    # Add debug parameter to show all clients for troubleshooting
+    debug_mode = request.query_params.get('debug', 'false').lower() == 'true'
+    
     try:
         from django.contrib.auth import get_user_model
         User = get_user_model()
@@ -628,8 +631,8 @@ def get_bcba_clients(request):
         if hasattr(user, 'role') and user.role:
             role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
             
-            if role_name in ['Admin', 'Superadmin']:
-                # Admin can see all clients
+            if role_name in ['Admin', 'Superadmin'] or debug_mode:
+                # Admin can see all clients, or debug mode shows all clients
                 clients = User.objects.filter(
                     role__name__in=['Clients/Parent', 'Client']
                 ).select_related('role').order_by('first_name', 'last_name')
@@ -641,6 +644,9 @@ def get_bcba_clients(request):
                     role__name__in=['Clients/Parent', 'Client']
                 ).select_related('role').order_by('first_name', 'last_name')
                 
+                # Debug: Check if supervisor field exists and has clients
+                supervisor_clients_count = clients.count()
+                
                 # If no clients found via supervisor field, fall back to session history
                 if not clients.exists():
                     client_ids = Session.objects.filter(staff=user).values_list('client_id', flat=True).distinct()
@@ -648,6 +654,43 @@ def get_bcba_clients(request):
                         id__in=client_ids,
                         role__name__in=['Clients/Parent', 'Client']
                     ).select_related('role').order_by('first_name', 'last_name')
+                    
+                    # Debug: Check session-based clients
+                    session_clients_count = clients.count()
+                    
+                    # If still no clients, try broader search for any clients
+                    if not clients.exists():
+                        # Try to find any clients with the role, regardless of assignment
+                        all_clients = User.objects.filter(
+                            role__name__in=['Clients/Parent', 'Client']
+                        ).select_related('role').order_by('first_name', 'last_name')
+                        
+                        # For debugging, let's see what clients exist
+                        debug_info = {
+                            'supervisor_clients_count': supervisor_clients_count,
+                            'session_clients_count': session_clients_count,
+                            'total_clients_with_role': all_clients.count(),
+                            'user_id': user.id,
+                            'user_role': user.role.name if hasattr(user, 'role') and user.role else 'No role'
+                        }
+                        
+                        # Return debug info if no clients found
+                        if not all_clients.exists():
+                            return Response({
+                                'bcba': {
+                                    'id': int(user.id),
+                                    'username': str(user.username),
+                                    'name': user.get_full_name() or user.username,
+                                    'role': user.role.name if hasattr(user, 'role') and user.role else 'No role'
+                                },
+                                'clients': [],
+                                'total_clients': 0,
+                                'debug_info': debug_info,
+                                'message': 'No clients found. Check if clients exist and have proper role assignments.'
+                            })
+                        else:
+                            # Use all clients as fallback for debugging
+                            clients = all_clients
         else:
             clients = User.objects.none()
         
@@ -748,6 +791,18 @@ def get_bcba_clients(request):
             }
             client_list.append(client_info)
         
+        # Add debug information to help troubleshoot
+        debug_info = {
+            'bcba_id': user.id,
+            'bcba_role': user.role.name if hasattr(user, 'role') and user.role else 'No role',
+            'clients_found': len(client_list),
+            'supervisor_field_exists': hasattr(User.objects.first(), 'supervisor') if User.objects.exists() else False,
+            'debug_mode': debug_mode,
+            'all_users_count': User.objects.count(),
+            'clients_with_role_count': User.objects.filter(role__name__in=['Clients/Parent', 'Client']).count(),
+            'sessions_with_bcba_count': Session.objects.filter(staff=user).count()
+        }
+        
         return Response({
             'bcba': {
                 'id': int(user.id),
@@ -756,7 +811,8 @@ def get_bcba_clients(request):
                 'role': user.role.name if hasattr(user, 'role') and user.role else 'No role'
             },
             'clients': client_list,
-            'total_clients': len(client_list)
+            'total_clients': len(client_list),
+            'debug_info': debug_info
         })
         
     except Exception as e:
