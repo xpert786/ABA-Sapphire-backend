@@ -17,7 +17,7 @@ class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'id', 'username', 'name', 'email', 'phone',
+            'id', 'username', 'name', 'email', 'role', 'phone',
             'business_name', 'business_address', 'business_website', 'status', 'goals', 'session_focus', 'telehealth', 'session_note'
         ]
         read_only_fields = ['id']

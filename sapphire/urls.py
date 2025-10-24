@@ -13,6 +13,7 @@ urlpatterns = [
     path('sapphire/session/', include('session.urls')),
     path('sapphire/messaging/', include('messaging.urls')),
     path('sapphire/ocean/', include('ocean.urls')),
+    path('sapphire/treatment-plan/', include('treatment_plan.urls')),
 ]
 
 # Serve media files during development
