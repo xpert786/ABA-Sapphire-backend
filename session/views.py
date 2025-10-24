@@ -1307,6 +1307,317 @@ def get_session_treatment_plan_data(request, session_id):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_client_treatment_plan_details(request, client_id):
+    """API endpoint to get comprehensive treatment plan details for a client with session scheduling logic"""
+    user = request.user
+    
+    # Check if user has permission to access client data
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name not in ['RBT', 'BCBA', 'Admin', 'Superadmin']:
+            return Response(
+                {'error': 'Only RBTs, BCBAs, and administrators can access client treatment plan details'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+    else:
+        return Response(
+            {'error': 'User role not found'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    try:
+        from django.contrib.auth import get_user_model
+        from treatment_plan.models import TreatmentPlan, TreatmentGoal
+        
+        User = get_user_model()
+        
+        # Get the client
+        try:
+            client = User.objects.get(id=client_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Client not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if user has permission to access this client's data
+        if hasattr(user, 'role') and user.role:
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            
+            if role_name not in ['Admin', 'Superadmin']:
+                # RBT/BCBA can only access if they have sessions with this client or are assigned
+                has_sessions = Session.objects.filter(
+                    client=client, 
+                    staff=user
+                ).exists()
+                
+                is_assigned = hasattr(client, 'supervisor') and client.supervisor == user
+                
+                if not has_sessions and not is_assigned:
+                    return Response(
+                        {'error': 'You can only access treatment plans for your assigned clients'}, 
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+        
+        # Get all treatment plans for this client
+        all_treatment_plans = TreatmentPlan.objects.filter(
+            client_id=client_id
+        ).order_by('-created_at')
+        
+        # Get the most recent treatment plan
+        latest_treatment_plan = all_treatment_plans.first()
+        
+        # Get scheduled sessions for this client
+        scheduled_sessions = Session.objects.filter(
+            client=client,
+            status__in=['scheduled', 'in_progress']
+        ).order_by('session_date', 'start_time')
+        
+        # Get completed sessions for this client
+        completed_sessions = Session.objects.filter(
+            client=client,
+            status='completed'
+        ).order_by('-session_date')[:5]  # Last 5 completed sessions
+        
+        # Get upcoming sessions
+        from django.utils import timezone
+        upcoming_sessions = Session.objects.filter(
+            client=client,
+            session_date__gte=timezone.now().date(),
+            status__in=['scheduled', 'in_progress']
+        ).order_by('session_date', 'start_time')
+        
+        # Get client's assigned BCBA
+        assigned_bcba = None
+        if hasattr(client, 'supervisor') and client.supervisor:
+            assigned_bcba = {
+                'id': client.supervisor.id,
+                'name': client.supervisor.get_full_name() or client.supervisor.username,
+                'username': client.supervisor.username,
+                'email': client.supervisor.email
+            }
+        
+        # Get treatment goals for the latest plan
+        treatment_goals = []
+        if latest_treatment_plan:
+            goals = TreatmentGoal.objects.filter(
+                treatment_plan=latest_treatment_plan
+            ).order_by('priority', 'created_at')
+            
+            for goal in goals:
+                treatment_goals.append({
+                    'id': goal.id,
+                    'description': goal.goal_description,
+                    'mastery_criteria': goal.mastery_criteria,
+                    'custom_mastery_criteria': goal.custom_mastery_criteria,
+                    'priority': goal.priority,
+                    'is_achieved': goal.is_achieved,
+                    'progress_notes': goal.progress_notes,
+                    'created_at': goal.created_at.isoformat()
+                })
+        
+        # Format treatment plans
+        formatted_plans = []
+        for plan in all_treatment_plans:
+            formatted_plans.append({
+                'id': plan.id,
+                'plan_type': plan.plan_type,
+                'status': plan.status,
+                'priority': plan.priority,
+                'created_at': plan.created_at.isoformat(),
+                'updated_at': plan.updated_at.isoformat(),
+                'bcba_name': plan.bcba.get_full_name() or plan.bcba.username if plan.bcba else 'Unknown'
+            })
+        
+        # Format scheduled sessions
+        formatted_scheduled_sessions = []
+        for session in scheduled_sessions:
+            formatted_scheduled_sessions.append({
+                'id': session.id,
+                'session_date': session.session_date.isoformat() if session.session_date else None,
+                'start_time': session.start_time.isoformat() if session.start_time else None,
+                'end_time': session.end_time.isoformat() if session.end_time else None,
+                'status': session.status,
+                'staff_name': session.staff.get_full_name() or session.staff.username if session.staff else 'Unknown',
+                'location': getattr(session, 'location', ''),
+                'notes': getattr(session, 'notes', '')
+            })
+        
+        # Format completed sessions
+        formatted_completed_sessions = []
+        for session in completed_sessions:
+            formatted_completed_sessions.append({
+                'id': session.id,
+                'session_date': session.session_date.isoformat() if session.session_date else None,
+                'start_time': session.start_time.isoformat() if session.start_time else None,
+                'end_time': session.end_time.isoformat() if session.end_time else None,
+                'status': session.status,
+                'staff_name': session.staff.get_full_name() or session.staff.username if session.staff else 'Unknown',
+                'location': getattr(session, 'location', ''),
+                'notes': getattr(session, 'notes', '')
+            })
+        
+        # Calculate session statistics
+        total_sessions = Session.objects.filter(client=client).count()
+        completed_count = Session.objects.filter(client=client, status='completed').count()
+        in_progress_count = Session.objects.filter(client=client, status='in_progress').count()
+        scheduled_count = Session.objects.filter(client=client, status='scheduled').count()
+        
+        # Calculate completion rate
+        completion_rate = (completed_count / total_sessions * 100) if total_sessions > 0 else 0
+        
+        # Get recent activity (last 30 days)
+        from datetime import timedelta
+        recent_date = timezone.now().date() - timedelta(days=30)
+        recent_sessions = Session.objects.filter(
+            client=client,
+            session_date__gte=recent_date
+        ).count()
+        
+        # Build comprehensive response
+        response_data = {
+            'client': {
+                'id': client.id,
+                'name': client.get_full_name() or client.username,
+                'username': client.username,
+                'email': client.email,
+                'phone': getattr(client, 'phone', '') or '',
+                'is_active': client.is_active,
+                'date_joined': client.date_joined.isoformat() if client.date_joined else None,
+                'last_login': client.last_login.isoformat() if client.last_login else None,
+                'assigned_bcba': assigned_bcba
+            },
+            'treatment_plans': {
+                'latest_plan': {
+                    'id': latest_treatment_plan.id if latest_treatment_plan else None,
+                    'plan_type': latest_treatment_plan.plan_type if latest_treatment_plan else None,
+                    'status': latest_treatment_plan.status if latest_treatment_plan else None,
+                    'client_strengths': latest_treatment_plan.client_strengths if latest_treatment_plan else None,
+                    'areas_of_need': latest_treatment_plan.areas_of_need if latest_treatment_plan else None,
+                    'assessment_tools': latest_treatment_plan.assessment_tools_used if latest_treatment_plan else None,
+                    'reinforcement_strategies': latest_treatment_plan.reinforcement_strategies if latest_treatment_plan else None,
+                    'prompting_hierarchy': latest_treatment_plan.prompting_hierarchy if latest_treatment_plan else None,
+                    'behavior_interventions': latest_treatment_plan.behavior_interventions if latest_treatment_plan else None,
+                    'data_collection_methods': latest_treatment_plan.data_collection_methods if latest_treatment_plan else None,
+                    'created_at': latest_treatment_plan.created_at.isoformat() if latest_treatment_plan else None,
+                    'updated_at': latest_treatment_plan.updated_at.isoformat() if latest_treatment_plan else None
+                },
+                'all_plans': formatted_plans,
+                'goals': treatment_goals
+            },
+            'sessions': {
+                'scheduled': formatted_scheduled_sessions,
+                'completed': formatted_completed_sessions,
+                'upcoming': [
+                    {
+                        'id': session.id,
+                        'session_date': session.session_date.isoformat() if session.session_date else None,
+                        'start_time': session.start_time.isoformat() if session.start_time else None,
+                        'end_time': session.end_time.isoformat() if session.end_time else None,
+                        'status': session.status,
+                        'staff_name': session.staff.get_full_name() or session.staff.username if session.staff else 'Unknown'
+                    } for session in upcoming_sessions
+                ]
+            },
+            'statistics': {
+                'total_sessions': total_sessions,
+                'completed_sessions': completed_count,
+                'in_progress_sessions': in_progress_count,
+                'scheduled_sessions': scheduled_count,
+                'completion_rate': round(completion_rate, 2),
+                'recent_sessions_30_days': recent_sessions
+            },
+            'session_form_data': {
+                'pre_session_checklist': [
+                    {
+                        'id': 'materials_prepared',
+                        'name': 'Materials Prepared',
+                        'description': 'Picture Cards, Tokens, Toys',
+                        'is_completed': False
+                    },
+                    {
+                        'id': 'treatment_plan_reviewed',
+                        'name': 'Treatment Plan Reviewed',
+                        'description': f'Review plan: {latest_treatment_plan.plan_type}' if latest_treatment_plan else 'No treatment plan available',
+                        'is_completed': False
+                    },
+                    {
+                        'id': 'environment_setup',
+                        'name': 'Environment Setup Complete',
+                        'description': 'Quiet, distraction-free environment',
+                        'is_completed': False
+                    },
+                    {
+                        'id': 'data_collection_ready',
+                        'name': 'Data Collection Sheets Ready',
+                        'description': latest_treatment_plan.data_collection_methods if latest_treatment_plan else 'Basic data collection forms',
+                        'is_completed': False
+                    }
+                ],
+                'suggested_activities': [
+                    {
+                        'id': 'discrete_trial_training',
+                        'name': 'Discrete Trial Training',
+                        'description': 'Structured learning trials',
+                        'estimated_duration': 15
+                    },
+                    {
+                        'id': 'natural_environment_training',
+                        'name': 'Natural Environment Training',
+                        'description': 'Learning in natural settings',
+                        'estimated_duration': 20
+                    },
+                    {
+                        'id': 'social_skills_practice',
+                        'name': 'Social Skills Practice',
+                        'description': 'Peer interaction and social skills',
+                        'estimated_duration': 10
+                    }
+                ],
+                'reinforcement_strategies': [
+                    {
+                        'id': 'token_economy',
+                        'name': 'Token Economy',
+                        'description': latest_treatment_plan.reinforcement_strategies if latest_treatment_plan else 'Token economy system, social praise, preferred items',
+                        'effectiveness_scale': '1-5'
+                    },
+                    {
+                        'id': 'social_praise',
+                        'name': 'Social Praise',
+                        'description': 'Verbal and physical praise',
+                        'effectiveness_scale': '1-5'
+                    },
+                    {
+                        'id': 'preferred_items',
+                        'name': 'Preferred Items',
+                        'description': 'Access to preferred activities/items',
+                        'effectiveness_scale': '1-5'
+                    }
+                ],
+                'intervention_strategies': {
+                    'prompting_hierarchy': latest_treatment_plan.prompting_hierarchy if latest_treatment_plan else 'General prompting approach',
+                    'behavior_interventions': latest_treatment_plan.behavior_interventions if latest_treatment_plan else 'Basic behavior management strategies',
+                    'reinforcement_strategies': latest_treatment_plan.reinforcement_strategies if latest_treatment_plan else 'Social praise and preferred items'
+                },
+                'assessment_summary': {
+                    'assessment_tools_used': latest_treatment_plan.assessment_tools_used if latest_treatment_plan else 'Basic observation and assessment',
+                    'client_strengths': latest_treatment_plan.client_strengths if latest_treatment_plan else 'To be determined through session',
+                    'areas_of_need': latest_treatment_plan.areas_of_need if latest_treatment_plan else 'To be identified during session'
+                }
+            }
+        }
+        
+        return Response(response_data)
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get client treatment plan details: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
 class TimeTrackerView(generics.ListCreateAPIView):
     """API view for listing and creating time tracker entries"""
     permission_classes = [permissions.IsAuthenticated]

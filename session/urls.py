@@ -19,6 +19,7 @@ urlpatterns = [
     path('bcba/clients/', views.get_bcba_clients, name='bcba-clients'),
     path('treatment-plan/<int:client_id>/session-data/', views.get_treatment_plan_for_session, name='treatment-plan-session-data'),
     path('sessions/<int:session_id>/treatment-plan-data/', views.get_session_treatment_plan_data, name='session-treatment-plan-data'),
+    path('clients/<int:client_id>/treatment-plan-details/', views.get_client_treatment_plan_details, name='client-treatment-plan-details'),
     
     # Session timer endpoints
     path('sessions/<int:session_id>/timer/', views.SessionTimerView.as_view(), name='session-timer'),

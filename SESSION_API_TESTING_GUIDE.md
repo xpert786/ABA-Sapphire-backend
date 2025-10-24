@@ -265,6 +265,25 @@ curl -X GET http://localhost:8000/sapphire/session/sessions/5/treatment-plan-dat
 - **Session-based**: Gets treatment plan data for a specific session
 - **Complete Data**: Includes session details, treatment plan, and form data
 
+### 2.12 Get Comprehensive Client Treatment Plan Details
+
+```bash
+curl -X GET http://localhost:8000/sapphire/session/clients/4/treatment-plan-details/ \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Postman:**
+- Method: GET
+- URL: `http://localhost:8000/sapphire/session/clients/4/treatment-plan-details/`
+- Headers: `Authorization: Bearer <access_token>`
+
+**Note:** 
+- **RBT/BCBA**: Can access treatment plan details for their assigned clients
+- **Admin/Superadmin**: Can access any client's treatment plan details
+- **Other roles**: Cannot access this endpoint
+- **Comprehensive Data**: Includes client info, treatment plans, sessions, statistics, and form data
+- **Session Scheduling**: Handles session scheduling complexities and relationships
+
 ## 3. Session Timer Endpoints
 
 ### 3.1 Get Session Timer
