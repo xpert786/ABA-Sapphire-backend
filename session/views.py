@@ -1370,25 +1370,28 @@ def get_client_treatment_plan_details(request, client_id):
         # Get the most recent treatment plan
         latest_treatment_plan = all_treatment_plans.first()
         
+        # Convert queryset to list to avoid RelatedManager serialization issues
+        all_treatment_plans_list = list(all_treatment_plans)
+        
         # Get scheduled sessions for this client
-        scheduled_sessions = Session.objects.filter(
+        scheduled_sessions = list(Session.objects.filter(
             client=client,
             status__in=['scheduled', 'in_progress']
-        ).order_by('session_date', 'start_time')
+        ).order_by('session_date', 'start_time'))
         
         # Get completed sessions for this client
-        completed_sessions = Session.objects.filter(
+        completed_sessions = list(Session.objects.filter(
             client=client,
             status='completed'
-        ).order_by('-session_date')[:5]  # Last 5 completed sessions
+        ).order_by('-session_date')[:5])  # Last 5 completed sessions
         
         # Get upcoming sessions
         from django.utils import timezone
-        upcoming_sessions = Session.objects.filter(
+        upcoming_sessions = list(Session.objects.filter(
             client=client,
             session_date__gte=timezone.now().date(),
             status__in=['scheduled', 'in_progress']
-        ).order_by('session_date', 'start_time')
+        ).order_by('session_date', 'start_time'))
         
         # Get client's assigned BCBA
         assigned_bcba = None
@@ -1403,9 +1406,9 @@ def get_client_treatment_plan_details(request, client_id):
         # Get treatment goals for the latest plan
         treatment_goals = []
         if latest_treatment_plan:
-            goals = TreatmentGoal.objects.filter(
+            goals = list(TreatmentGoal.objects.filter(
                 treatment_plan=latest_treatment_plan
-            ).order_by('priority', 'created_at')
+            ).order_by('priority', 'created_at'))
             
             for goal in goals:
                 treatment_goals.append({
@@ -1421,7 +1424,7 @@ def get_client_treatment_plan_details(request, client_id):
         
         # Format treatment plans
         formatted_plans = []
-        for plan in all_treatment_plans:
+        for plan in all_treatment_plans_list:
             formatted_plans.append({
                 'id': plan.id,
                 'plan_type': plan.plan_type,
@@ -1480,12 +1483,12 @@ def get_client_treatment_plan_details(request, client_id):
         # Build comprehensive response
         response_data = {
             'client': {
-                'id': client.id,
-                'name': client.get_full_name() or client.username,
-                'username': client.username,
-                'email': client.email,
-                'phone': getattr(client, 'phone', '') or '',
-                'is_active': client.is_active,
+                'id': int(client.id),
+                'name': str(client.get_full_name() or client.username),
+                'username': str(client.username),
+                'email': str(client.email) if client.email else '',
+                'phone': str(getattr(client, 'phone', '') or ''),
+                'is_active': bool(client.is_active),
                 'date_joined': client.date_joined.isoformat() if client.date_joined else None,
                 'last_login': client.last_login.isoformat() if client.last_login else None,
                 'assigned_bcba': assigned_bcba
@@ -1523,12 +1526,12 @@ def get_client_treatment_plan_details(request, client_id):
                 ]
             },
             'statistics': {
-                'total_sessions': total_sessions,
-                'completed_sessions': completed_count,
-                'in_progress_sessions': in_progress_count,
-                'scheduled_sessions': scheduled_count,
-                'completion_rate': round(completion_rate, 2),
-                'recent_sessions_30_days': recent_sessions
+                'total_sessions': int(total_sessions),
+                'completed_sessions': int(completed_count),
+                'in_progress_sessions': int(in_progress_count),
+                'scheduled_sessions': int(scheduled_count),
+                'completion_rate': float(round(completion_rate, 2)),
+                'recent_sessions_30_days': int(recent_sessions)
             },
             'session_form_data': {
                 'pre_session_checklist': [
@@ -1610,7 +1613,13 @@ def get_client_treatment_plan_details(request, client_id):
             }
         }
         
-        return Response(response_data)
+        try:
+            return Response(response_data)
+        except Exception as serialization_error:
+            return Response(
+                {'error': f'Failed to serialize response data: {str(serialization_error)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
         
     except Exception as e:
         return Response(
