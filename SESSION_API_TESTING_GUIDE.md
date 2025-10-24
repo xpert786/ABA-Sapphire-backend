@@ -228,6 +228,23 @@ curl -X GET http://localhost:8000/sapphire/session/bcba/clients/ \
 - **Admin/Superadmin**: Can see all clients
 - **Other roles**: Cannot access this endpoint
 
+### 2.10 Get Treatment Plan Data for RBT Session Form
+
+```bash
+curl -X GET http://localhost:8000/sapphire/session/treatment-plan/4/session-data/ \
+  -H "Authorization: Bearer <rbt_access_token>"
+```
+
+**Postman:**
+- Method: GET
+- URL: `http://localhost:8000/sapphire/session/treatment-plan/4/session-data/`
+- Headers: `Authorization: Bearer <rbt_access_token>`
+
+**Note:** 
+- **RBT/BCBA**: Can access treatment plans for their assigned clients
+- **Admin/Superadmin**: Can access any client's treatment plan
+- **Other roles**: Cannot access this endpoint
+
 ## 3. Session Timer Endpoints
 
 ### 3.1 Get Session Timer
@@ -639,6 +656,121 @@ curl -X POST http://localhost:8000/sapphire/session/sessions/2/save-and-generate
     }
   ],
   "total_clients": 2
+}
+```
+
+### Treatment Plan Session Data Response
+```json
+{
+  "client": {
+    "id": 4,
+    "name": "John Doe",
+    "username": "john.doe",
+    "email": "john.doe@example.com"
+  },
+  "treatment_plan": {
+    "id": 1,
+    "plan_type": "comprehensive_aba",
+    "client_strengths": "Strong visual matching skills, motivated by token economy",
+    "areas_of_need": "Transitioning between activities, emotional regulation",
+    "assessment_tools": "VB-MAPP, FBA, Clinical Observation",
+    "created_at": "2024-01-01T08:00:00Z",
+    "updated_at": "2024-01-15T10:30:00Z"
+  },
+  "session_form_data": {
+    "pre_session_checklist": [
+      {
+        "id": "materials_prepared",
+        "name": "Materials Prepared",
+        "description": "Picture Cards, Tokens, Toys",
+        "is_completed": false
+      },
+      {
+        "id": "treatment_plan_reviewed",
+        "name": "Treatment Plan Reviewed",
+        "description": "Review plan: comprehensive_aba",
+        "is_completed": false
+      },
+      {
+        "id": "environment_setup",
+        "name": "Environment Setup Complete",
+        "description": "Quiet, distraction-free environment",
+        "is_completed": false
+      },
+      {
+        "id": "data_collection_ready",
+        "name": "Data Collection Sheets Ready",
+        "description": "Frequency counting for problem behavior, percentage correct for skill acquisition goals",
+        "is_completed": false
+      }
+    ],
+    "goals": [
+      {
+        "id": 1,
+        "description": "Client will request help using PECS in 8/10 opportunities across 3 different activities",
+        "mastery_criteria": "8/10_opportunities",
+        "custom_mastery_criteria": "",
+        "priority": "medium",
+        "is_achieved": false,
+        "progress_notes": ""
+      },
+      {
+        "id": 2,
+        "description": "Client will appropriately take turns in 3+ activities per session with peers",
+        "mastery_criteria": "3+_activities_per_session",
+        "custom_mastery_criteria": "",
+        "priority": "high",
+        "is_achieved": false,
+        "progress_notes": ""
+      }
+    ],
+    "suggested_activities": [
+      {
+        "id": "discrete_trial_training",
+        "name": "Discrete Trial Training",
+        "description": "Structured learning trials",
+        "estimated_duration": 15
+      },
+      {
+        "id": "natural_environment_training",
+        "name": "Natural Environment Training",
+        "description": "Learning in natural settings",
+        "estimated_duration": 20
+      },
+      {
+        "id": "social_skills_practice",
+        "name": "Social Skills Practice",
+        "description": "Peer interaction and social skills",
+        "estimated_duration": 10
+      }
+    ],
+    "reinforcement_strategies": [
+      {
+        "id": "token_economy",
+        "name": "Token Economy",
+        "description": "Token economy system, social praise, preferred items, break cards",
+        "effectiveness_scale": "1-5"
+      },
+      {
+        "id": "social_praise",
+        "name": "Social Praise",
+        "description": "Verbal and physical praise",
+        "effectiveness_scale": "1-5"
+      },
+      {
+        "id": "preferred_items",
+        "name": "Preferred Items",
+        "description": "Access to preferred activities/items",
+        "effectiveness_scale": "1-5"
+      }
+    ],
+    "intervention_strategies": {
+      "prompting_hierarchy": "Least-to-most prompting: Independent -> Visual -> Gestural -> Verbal -> Physical",
+      "behavior_interventions": "Antecedent interventions: visual schedules, first-then boards, choice offering. Consequence strategies: differential reinforcement, extinction, functional communication training",
+      "reinforcement_strategies": "Token economy system, social praise, preferred items, break cards"
+    },
+    "data_collection_methods": "Frequency counting for problem behavior, percentage correct for skill acquisition goals, ABC data for antecedent-behavior-consequence analysis, duration data for engagement"
+  }
 }
 ```
 
