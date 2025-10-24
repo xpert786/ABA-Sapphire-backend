@@ -13,6 +13,10 @@ urlpatterns = [
     path('sessions/<int:pk>/', views.SessionDetailView.as_view(), name='session-detail'),
     path('sessions/start-from-schedule/', views.start_session_from_schedule, name='start-from-schedule'),
     path('upcoming-sessions/', views.upcoming_sessions, name='upcoming-sessions'),
+    path('sessions/statistics/', views.session_statistics, name='session-statistics'),
+    path('sessions/user-sessions/', views.get_user_sessions, name='user-sessions'),
+    path('users/<int:user_id>/details/', views.get_user_details, name='user-details'),
+    path('bcba/clients/', views.get_bcba_clients, name='bcba-clients'),
     
     # Session timer endpoints
     path('sessions/<int:session_id>/timer/', views.SessionTimerView.as_view(), name='session-timer'),

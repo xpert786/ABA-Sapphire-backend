@@ -33,16 +33,22 @@ class SessionListView(generics.ListCreateAPIView):
         user = self.request.user
         queryset = Session.objects.select_related('client', 'staff')
         
-        # Filter based on user role
+        # Role-based access control
         if hasattr(user, 'role') and user.role:
             role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
             
-            if role_name in ['RBT', 'BCBA']:
+            if role_name in ['Admin', 'Superadmin']:
+                # Admin can see all sessions
+                pass
+            elif role_name in ['RBT', 'BCBA']:
                 # Staff can see sessions they're assigned to
                 queryset = queryset.filter(staff=user)
             elif role_name == 'Clients/Parent':
                 # Clients can see their own sessions
                 queryset = queryset.filter(client=user)
+        else:
+            # Default: users can only see their own sessions
+            queryset = queryset.filter(staff=user)
         
         # Filter by status if provided
         status_filter = self.request.query_params.get('status')
@@ -56,6 +62,20 @@ class SessionListView(generics.ListCreateAPIView):
             queryset = queryset.filter(session_date__gte=start_date)
         if end_date:
             queryset = queryset.filter(session_date__lte=end_date)
+        
+        # Filter by client if provided (admin only)
+        client_filter = self.request.query_params.get('client_id')
+        if client_filter and hasattr(user, 'role') and user.role:
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            if role_name in ['Admin', 'Superadmin']:
+                queryset = queryset.filter(client_id=client_filter)
+        
+        # Filter by staff if provided (admin only)
+        staff_filter = self.request.query_params.get('staff_id')
+        if staff_filter and hasattr(user, 'role') and user.role:
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            if role_name in ['Admin', 'Superadmin']:
+                queryset = queryset.filter(staff_id=staff_filter)
             
         return queryset.order_by('-session_date', '-start_time')
 
@@ -320,17 +340,386 @@ def upcoming_sessions(request):
         status__in=['scheduled', 'in_progress']
     )
     
-    # Filter based on user role
+    # Role-based access control
     if hasattr(user, 'role') and user.role:
         role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
         
-        if role_name in ['RBT', 'BCBA']:
+        if role_name in ['Admin', 'Superadmin']:
+            # Admin can see all upcoming sessions
+            pass
+        elif role_name in ['RBT', 'BCBA']:
             queryset = queryset.filter(staff=user)
         elif role_name == 'Clients/Parent':
             queryset = queryset.filter(client=user)
+    else:
+        # Default: users can only see their own sessions
+        queryset = queryset.filter(staff=user)
     
     serializer = SessionListSerializer(queryset.order_by('session_date', 'start_time'), many=True)
     return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def session_statistics(request):
+    """API endpoint for getting session statistics"""
+    user = request.user
+    queryset = Session.objects.all()
+    
+    # Role-based access control
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name in ['Admin', 'Superadmin']:
+            # Admin can see all sessions
+            pass
+        elif role_name in ['RBT', 'BCBA']:
+            queryset = queryset.filter(staff=user)
+        elif role_name == 'Clients/Parent':
+            queryset = queryset.filter(client=user)
+    else:
+        # Default: users can only see their own sessions
+        queryset = queryset.filter(staff=user)
+    
+    # Filter by date range if provided
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    if start_date:
+        queryset = queryset.filter(session_date__gte=start_date)
+    if end_date:
+        queryset = queryset.filter(session_date__lte=end_date)
+    
+    # Calculate statistics
+    total_sessions = queryset.count()
+    completed_sessions = queryset.filter(status='completed').count()
+    in_progress_sessions = queryset.filter(status='in_progress').count()
+    scheduled_sessions = queryset.filter(status='scheduled').count()
+    cancelled_sessions = queryset.filter(status='cancelled').count()
+    
+    # Calculate completion rate
+    completion_rate = (completed_sessions / total_sessions * 100) if total_sessions > 0 else 0
+    
+    # Get recent sessions (last 7 days)
+    from datetime import timedelta
+    recent_date = timezone.now().date() - timedelta(days=7)
+    recent_sessions = queryset.filter(session_date__gte=recent_date).count()
+    
+    return Response({
+        'total_sessions': total_sessions,
+        'completed_sessions': completed_sessions,
+        'in_progress_sessions': in_progress_sessions,
+        'scheduled_sessions': scheduled_sessions,
+        'cancelled_sessions': cancelled_sessions,
+        'completion_rate': round(completion_rate, 2),
+        'recent_sessions_7_days': recent_sessions
+    })
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_user_sessions(request):
+    """API endpoint for getting sessions for a specific user (admin only)"""
+    user = request.user
+    
+    # Check if user is admin
+    if not (hasattr(user, 'role') and user.role and 
+            user.role.name in ['Admin', 'Superadmin']):
+        return Response(
+            {'error': 'Only administrators can access user sessions'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    # Get user_id from query params
+    user_id = request.query_params.get('user_id')
+    if not user_id:
+        return Response(
+            {'error': 'user_id parameter is required'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        target_user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': 'User not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Get sessions for the target user
+    queryset = Session.objects.select_related('client', 'staff').filter(
+        models.Q(staff_id=user_id) | models.Q(client_id=user_id)
+    )
+    
+    # Filter by status if provided
+    status_filter = request.query_params.get('status')
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+    
+    # Filter by date range if provided
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    if start_date:
+        queryset = queryset.filter(session_date__gte=start_date)
+    if end_date:
+        queryset = queryset.filter(session_date__lte=end_date)
+    
+    serializer = SessionListSerializer(queryset.order_by('-session_date', '-start_time'), many=True)
+    
+    return Response({
+        'user': {
+            'id': target_user.id,
+            'username': target_user.username,
+            'name': target_user.get_full_name() or target_user.username,
+            'role': target_user.role.name if hasattr(target_user, 'role') and target_user.role else 'No role'
+        },
+        'sessions': serializer.data,
+        'total_sessions': queryset.count()
+    })
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_user_details(request, user_id):
+    """API endpoint for getting detailed user information by ID"""
+    current_user = request.user
+    
+    # Check permissions
+    if hasattr(current_user, 'role') and current_user.role:
+        role_name = current_user.role.name if hasattr(current_user.role, 'name') else str(current_user.role)
+        
+        # Admin and Superadmin can see any user details
+        if role_name not in ['Admin', 'Superadmin']:
+            # Regular users can only see their own details
+            if current_user.id != int(user_id):
+                return Response(
+                    {'error': 'You can only view your own user details'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+    else:
+        # Default: users can only see their own details
+        if current_user.id != int(user_id):
+            return Response(
+                {'error': 'You can only view your own user details'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+    
+    try:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        target_user = User.objects.select_related('role').get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': 'User not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Get user's sessions (as staff)
+    staff_sessions = Session.objects.filter(staff=target_user).count()
+    client_sessions = Session.objects.filter(client=target_user).count()
+    
+    # Get recent sessions (last 30 days)
+    from datetime import timedelta
+    recent_date = timezone.now().date() - timedelta(days=30)
+    recent_staff_sessions = Session.objects.filter(
+        staff=target_user, 
+        session_date__gte=recent_date
+    ).count()
+    recent_client_sessions = Session.objects.filter(
+        client=target_user, 
+        session_date__gte=recent_date
+    ).count()
+    
+    # Get user's role information
+    role_info = None
+    if hasattr(target_user, 'role') and target_user.role:
+        # Handle permissions properly - convert to list if it's a ManyRelatedManager
+        permissions = getattr(target_user.role, 'permissions', [])
+        if hasattr(permissions, 'all'):
+            permissions = [perm.name for perm in permissions.all()]
+        elif hasattr(permissions, '__iter__') and not isinstance(permissions, str):
+            permissions = list(permissions)
+        else:
+            permissions = []
+            
+        role_info = {
+            'id': target_user.role.id,
+            'name': target_user.role.name,
+            'description': getattr(target_user.role, 'description', ''),
+            'permissions': permissions
+        }
+    
+    # Get user's profile information
+    profile_info = {
+        'first_name': target_user.first_name or '',
+        'last_name': target_user.last_name or '',
+        'email': target_user.email or '',
+        'phone': getattr(target_user, 'phone', '') or '',
+        'address': getattr(target_user, 'address', '') or '',
+        'date_joined': target_user.date_joined.isoformat() if target_user.date_joined else None,
+        'last_login': target_user.last_login.isoformat() if target_user.last_login else None,
+        'is_active': target_user.is_active,
+        'is_staff': target_user.is_staff,
+        'is_superuser': target_user.is_superuser
+    }
+    
+    # Get user's session statistics
+    session_stats = {
+        'total_sessions_as_staff': staff_sessions,
+        'total_sessions_as_client': client_sessions,
+        'recent_sessions_as_staff': recent_staff_sessions,
+        'recent_sessions_as_client': recent_client_sessions,
+        'total_sessions': staff_sessions + client_sessions
+    }
+    
+    # Get upcoming sessions
+    upcoming_sessions = Session.objects.filter(
+        models.Q(staff=target_user) | models.Q(client=target_user),
+        session_date__gte=timezone.now().date(),
+        status__in=['scheduled', 'in_progress']
+    ).count()
+    
+    try:
+        # Ensure all data is JSON serializable
+        response_data = {
+            'user': {
+                'id': int(target_user.id),
+                'username': str(target_user.username),
+                'profile': profile_info,
+                'role': role_info,
+                'session_statistics': session_stats,
+                'upcoming_sessions': int(upcoming_sessions)
+            }
+        }
+        
+        return Response(response_data)
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to serialize user data: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_bcba_clients(request):
+    """API endpoint for BCBAs to get their client list"""
+    user = request.user
+    
+    # Check if user is BCBA or has appropriate role
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        # Only BCBAs and admins can access this endpoint
+        if role_name not in ['BCBA', 'Admin', 'Superadmin']:
+            return Response(
+                {'error': 'Only BCBAs and administrators can access client lists'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+    else:
+        return Response(
+            {'error': 'User role not found'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
+    
+    try:
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        # Get clients for this BCBA
+        if hasattr(user, 'role') and user.role:
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            
+            if role_name in ['Admin', 'Superadmin']:
+                # Admin can see all clients
+                clients = User.objects.filter(
+                    role__name__in=['Clients/Parent', 'Client']
+                ).select_related('role').order_by('first_name', 'last_name')
+            else:
+                # BCBA can only see their own clients
+                # Get clients from sessions where this user is the staff
+                client_ids = Session.objects.filter(staff=user).values_list('client_id', flat=True).distinct()
+                clients = User.objects.filter(
+                    id__in=client_ids,
+                    role__name__in=['Clients/Parent', 'Client']
+                ).select_related('role').order_by('first_name', 'last_name')
+        else:
+            clients = User.objects.none()
+        
+        # Get additional client information
+        client_list = []
+        for client in clients:
+            # Get session statistics for this client
+            total_sessions = Session.objects.filter(client=client, staff=user).count()
+            completed_sessions = Session.objects.filter(
+                client=client, 
+                staff=user, 
+                status='completed'
+            ).count()
+            
+            # Get recent sessions (last 30 days)
+            from datetime import timedelta
+            recent_date = timezone.now().date() - timedelta(days=30)
+            recent_sessions = Session.objects.filter(
+                client=client,
+                staff=user,
+                session_date__gte=recent_date
+            ).count()
+            
+            # Get upcoming sessions
+            upcoming_sessions = Session.objects.filter(
+                client=client,
+                staff=user,
+                session_date__gte=timezone.now().date(),
+                status__in=['scheduled', 'in_progress']
+            ).count()
+            
+            # Get last session date
+            last_session = Session.objects.filter(
+                client=client,
+                staff=user
+            ).order_by('-session_date').first()
+            
+            client_info = {
+                'id': int(client.id),
+                'username': str(client.username),
+                'first_name': client.first_name or '',
+                'last_name': client.last_name or '',
+                'email': client.email or '',
+                'phone': getattr(client, 'phone', '') or '',
+                'is_active': client.is_active,
+                'date_joined': client.date_joined.isoformat() if client.date_joined else None,
+                'last_login': client.last_login.isoformat() if client.last_login else None,
+                'role': {
+                    'id': client.role.id if hasattr(client, 'role') and client.role else None,
+                    'name': client.role.name if hasattr(client, 'role') and client.role else 'No role'
+                },
+                'session_statistics': {
+                    'total_sessions': total_sessions,
+                    'completed_sessions': completed_sessions,
+                    'recent_sessions_30_days': recent_sessions,
+                    'upcoming_sessions': upcoming_sessions,
+                    'completion_rate': round((completed_sessions / total_sessions * 100), 2) if total_sessions > 0 else 0
+                },
+                'last_session_date': last_session.session_date.isoformat() if last_session else None,
+                'last_session_status': last_session.status if last_session else None
+            }
+            client_list.append(client_info)
+        
+        return Response({
+            'bcba': {
+                'id': int(user.id),
+                'username': str(user.username),
+                'name': user.get_full_name() or user.username,
+                'role': user.role.name if hasattr(user, 'role') and user.role else 'No role'
+            },
+            'clients': client_list,
+            'total_clients': len(client_list)
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': f'Failed to get client list: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 class TimeTrackerView(generics.ListCreateAPIView):
     """API view for listing and creating time tracker entries"""

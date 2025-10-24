@@ -22,8 +22,12 @@ class TreatmentPlanListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         queryset = TreatmentPlan.objects.select_related('bcba').prefetch_related('goals')
         
-        # Filter by BCBA if user is not admin
-        if not self.request.user.is_staff:
+        # Role-based access control
+        if self.request.user.is_staff:
+            # Admin can see all treatment plans
+            pass
+        else:
+            # Regular users can only see their own treatment plans
             queryset = queryset.filter(bcba=self.request.user)
         
         # Filter by status if provided
@@ -35,6 +39,11 @@ class TreatmentPlanListCreateView(generics.ListCreateAPIView):
         priority_filter = self.request.query_params.get('priority')
         if priority_filter:
             queryset = queryset.filter(priority=priority_filter)
+        
+        # Filter by plan type if provided
+        plan_type_filter = self.request.query_params.get('plan_type')
+        if plan_type_filter:
+            queryset = queryset.filter(plan_type=plan_type_filter)
         
         # Search by client name or ID
         search = self.request.query_params.get('search')
