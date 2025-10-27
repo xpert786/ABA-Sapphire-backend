@@ -1,10 +1,66 @@
 from rest_framework import serializers
 from api.models import CustomUser
 from .models import Session
+from django.utils import timezone
+from datetime import date
 import re
 
 # Client serializer using CustomUser from API
 class ClientSerializer(serializers.ModelSerializer):
+    age = serializers.SerializerMethodField()
+    last_session = serializers.SerializerMethodField()
+    upcoming_session = serializers.SerializerMethodField()
+    
+    def get_age(self, obj):
+        """Calculate age from date of birth"""
+        if obj.dob:
+            today = date.today()
+            return today.year - obj.dob.year - ((today.month, today.day) < (obj.dob.month, obj.dob.day))
+        return None
+    
+    def get_last_session(self, obj):
+        """Get the most recent completed session for this client"""
+        try:
+            last_session = Session.objects.filter(
+                client=obj,
+                session_date__lt=timezone.now().date()
+            ).order_by('-session_date', '-start_time').first()
+            
+            if last_session:
+                return {
+                    'id': last_session.id,
+                    'session_date': last_session.session_date,
+                    'start_time': last_session.start_time,
+                    'end_time': last_session.end_time,
+                    'staff_name': last_session.staff.name if last_session.staff else None,
+                    'duration': str(last_session.duration) if last_session.duration else None,
+                    'notes': last_session.session_notes
+                }
+        except Exception as e:
+            pass
+        return None
+    
+    def get_upcoming_session(self, obj):
+        """Get the next upcoming session for this client"""
+        try:
+            upcoming_session = Session.objects.filter(
+                client=obj,
+                session_date__gte=timezone.now().date()
+            ).order_by('session_date', 'start_time').first()
+            
+            if upcoming_session:
+                return {
+                    'id': upcoming_session.id,
+                    'session_date': upcoming_session.session_date,
+                    'start_time': upcoming_session.start_time,
+                    'end_time': upcoming_session.end_time,
+                    'staff_name': upcoming_session.staff.name if upcoming_session.staff else None,
+                    'duration': str(upcoming_session.duration) if upcoming_session.duration else None
+                }
+        except Exception as e:
+            pass
+        return None
+    
     def to_representation(self, instance):
         data = super().to_representation(instance)
         # Clean any problematic Unicode characters
@@ -17,10 +73,12 @@ class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'id', 'username', 'name', 'email', 'role', 'phone',
-            'business_name', 'business_address', 'business_website', 'status', 'goals', 'session_focus', 'telehealth', 'session_note'
+            'id', 'username', 'name', 'email', 'role', 'phone', 'dob',
+            'business_name', 'business_address', 'business_website', 'status', 
+            'goals', 'session_focus', 'telehealth', 'session_note',
+            'age', 'last_session', 'upcoming_session'
         ]
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'age', 'last_session', 'upcoming_session']
 
 # Staff serializer for nested representation
 class StaffSerializer(serializers.ModelSerializer):

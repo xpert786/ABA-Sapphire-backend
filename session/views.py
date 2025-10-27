@@ -1397,10 +1397,10 @@ def get_client_treatment_plan_details(request, client_id):
         assigned_bcba = None
         if hasattr(client, 'supervisor') and client.supervisor:
             assigned_bcba = {
-                'id': client.supervisor.id,
-                'name': client.supervisor.get_full_name() or client.supervisor.username,
-                'username': client.supervisor.username,
-                'email': client.supervisor.email
+                'id': int(client.supervisor.id),
+                'name': str(client.supervisor.get_full_name() or client.supervisor.username),
+                'username': str(client.supervisor.username),
+                'email': str(client.supervisor.email) if client.supervisor.email else ''
             }
         
         # Get treatment goals for the latest plan
@@ -1412,13 +1412,13 @@ def get_client_treatment_plan_details(request, client_id):
             
             for goal in goals:
                 treatment_goals.append({
-                    'id': goal.id,
-                    'description': goal.goal_description,
-                    'mastery_criteria': goal.mastery_criteria,
-                    'custom_mastery_criteria': goal.custom_mastery_criteria,
-                    'priority': goal.priority,
-                    'is_achieved': goal.is_achieved,
-                    'progress_notes': goal.progress_notes,
+                    'id': int(goal.id),
+                    'description': str(goal.goal_description),
+                    'mastery_criteria': str(goal.mastery_criteria),
+                    'custom_mastery_criteria': str(goal.custom_mastery_criteria),
+                    'priority': str(goal.priority),
+                    'is_achieved': bool(goal.is_achieved),
+                    'progress_notes': str(goal.progress_notes),
                     'created_at': goal.created_at.isoformat()
                 })
         
@@ -1426,48 +1426,48 @@ def get_client_treatment_plan_details(request, client_id):
         formatted_plans = []
         for plan in all_treatment_plans_list:
             formatted_plans.append({
-                'id': plan.id,
-                'plan_type': plan.plan_type,
-                'status': plan.status,
-                'priority': plan.priority,
+                'id': int(plan.id),
+                'plan_type': str(plan.plan_type),
+                'status': str(plan.status),
+                'priority': str(plan.priority),
                 'created_at': plan.created_at.isoformat(),
                 'updated_at': plan.updated_at.isoformat(),
-                'bcba_name': plan.bcba.get_full_name() or plan.bcba.username if plan.bcba else 'Unknown'
+                'bcba_name': str(plan.bcba.get_full_name() or plan.bcba.username if plan.bcba else 'Unknown')
             })
         
         # Format scheduled sessions
         formatted_scheduled_sessions = []
         for session in scheduled_sessions:
             formatted_scheduled_sessions.append({
-                'id': session.id,
+                'id': int(session.id),
                 'session_date': session.session_date.isoformat() if session.session_date else None,
                 'start_time': session.start_time.isoformat() if session.start_time else None,
                 'end_time': session.end_time.isoformat() if session.end_time else None,
-                'status': session.status,
-                'staff_name': session.staff.get_full_name() or session.staff.username if session.staff else 'Unknown',
-                'location': getattr(session, 'location', ''),
-                'notes': getattr(session, 'notes', '')
+                'status': str(session.status),
+                'staff_name': str(session.staff.get_full_name() or session.staff.username if session.staff else 'Unknown'),
+                'location': str(getattr(session, 'location', '')),
+                'notes': str(getattr(session, 'notes', ''))
             })
         
         # Format completed sessions
         formatted_completed_sessions = []
         for session in completed_sessions:
             formatted_completed_sessions.append({
-                'id': session.id,
+                'id': int(session.id),
                 'session_date': session.session_date.isoformat() if session.session_date else None,
                 'start_time': session.start_time.isoformat() if session.start_time else None,
                 'end_time': session.end_time.isoformat() if session.end_time else None,
-                'status': session.status,
-                'staff_name': session.staff.get_full_name() or session.staff.username if session.staff else 'Unknown',
-                'location': getattr(session, 'location', ''),
-                'notes': getattr(session, 'notes', '')
+                'status': str(session.status),
+                'staff_name': str(session.staff.get_full_name() or session.staff.username if session.staff else 'Unknown'),
+                'location': str(getattr(session, 'location', '')),
+                'notes': str(getattr(session, 'notes', ''))
             })
         
         # Calculate session statistics
-        total_sessions = Session.objects.filter(client=client).count()
-        completed_count = Session.objects.filter(client=client, status='completed').count()
-        in_progress_count = Session.objects.filter(client=client, status='in_progress').count()
-        scheduled_count = Session.objects.filter(client=client, status='scheduled').count()
+        total_sessions = int(Session.objects.filter(client=client).count())
+        completed_count = int(Session.objects.filter(client=client, status='completed').count())
+        in_progress_count = int(Session.objects.filter(client=client, status='in_progress').count())
+        scheduled_count = int(Session.objects.filter(client=client, status='scheduled').count())
         
         # Calculate completion rate
         completion_rate = (completed_count / total_sessions * 100) if total_sessions > 0 else 0
@@ -1475,10 +1475,10 @@ def get_client_treatment_plan_details(request, client_id):
         # Get recent activity (last 30 days)
         from datetime import timedelta
         recent_date = timezone.now().date() - timedelta(days=30)
-        recent_sessions = Session.objects.filter(
+        recent_sessions = int(Session.objects.filter(
             client=client,
             session_date__gte=recent_date
-        ).count()
+        ).count())
         
         # Build comprehensive response
         response_data = {
@@ -1516,12 +1516,12 @@ def get_client_treatment_plan_details(request, client_id):
                 'completed': formatted_completed_sessions,
                 'upcoming': [
                     {
-                        'id': session.id,
+                        'id': int(session.id),
                         'session_date': session.session_date.isoformat() if session.session_date else None,
                         'start_time': session.start_time.isoformat() if session.start_time else None,
                         'end_time': session.end_time.isoformat() if session.end_time else None,
-                        'status': session.status,
-                        'staff_name': session.staff.get_full_name() or session.staff.username if session.staff else 'Unknown'
+                        'status': str(session.status),
+                        'staff_name': str(session.staff.get_full_name() or session.staff.username if session.staff else 'Unknown')
                     } for session in upcoming_sessions
                 ]
             },

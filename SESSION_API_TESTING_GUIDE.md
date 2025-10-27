@@ -995,7 +995,407 @@ curl -X POST http://localhost:8000/sapphire/session/sessions/2/save-and-generate
 
 ## 10. Postman Collection Setup
 
-1. Create a new collection called "Session API"
+### 10.1 Complete Postman Collection
+
+Create a new collection called "Sapphire Session API" with the following requests:
+
+#### **Authentication Setup:**
+1. **Login Request:**
+   - Method: POST
+   - URL: `http://localhost:8000/sapphire/api/auth/login/`
+   - Headers: `Content-Type: application/json`
+   - Body (raw JSON):
+   ```json
+   {
+     "username": "your_username",
+     "password": "your_password"
+   }
+   ```
+   - Save the `access` token from response for other requests
+
+#### **Environment Variables:**
+Create environment variables:
+- `base_url`: `http://localhost:8000/sapphire`
+- `access_token`: `{{access_token}}` (from login response)
+
+### 10.2 Session Management APIs
+
+#### **1. Get All Sessions:**
+- Method: GET
+- URL: `{{base_url}}/session/sessions/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **2. Get Session by ID:**
+- Method: GET
+- URL: `{{base_url}}/session/sessions/1/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **3. Create New Session:**
+- Method: POST
+- URL: `{{base_url}}/session/sessions/`
+- Headers: 
+  - `Authorization: Bearer {{access_token}}`
+  - `Content-Type: application/json`
+- Body (raw JSON):
+```json
+{
+  "client": 4,
+  "staff": 6,
+  "session_date": "2024-01-15",
+  "start_time": "09:00:00",
+  "end_time": "10:00:00",
+  "location": "123 Willow Creek Drive, Denver, CO 80202",
+  "notes": "Initial assessment session"
+}
+```
+
+#### **4. Update Session:**
+- Method: PUT
+- URL: `{{base_url}}/session/sessions/1/`
+- Headers: 
+  - `Authorization: Bearer {{access_token}}`
+  - `Content-Type: application/json`
+- Body (raw JSON):
+```json
+{
+  "client": 4,
+  "staff": 6,
+  "session_date": "2024-01-15",
+  "start_time": "09:00:00",
+  "end_time": "10:00:00",
+  "status": "completed",
+  "location": "123 Willow Creek Drive, Denver, CO 80202",
+  "notes": "Session completed successfully"
+}
+```
+
+### 10.3 Session Statistics & Analytics
+
+#### **5. Get Session Statistics:**
+- Method: GET
+- URL: `{{base_url}}/session/sessions/statistics/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **6. Get User Sessions:**
+- Method: GET
+- URL: `{{base_url}}/session/sessions/user-sessions/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **7. Get User Details:**
+- Method: GET
+- URL: `{{base_url}}/session/users/6/details/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+### 10.4 BCBA & Client Management
+
+#### **8. Get BCBA Client List:**
+- Method: GET
+- URL: `{{base_url}}/session/bcba/clients/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **9. Get BCBA Client List (Debug Mode):**
+- Method: GET
+- URL: `{{base_url}}/session/bcba/clients/?debug=true`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+### 10.5 Treatment Plan Integration
+
+#### **10. Get Treatment Plan for Client:**
+- Method: GET
+- URL: `{{base_url}}/session/treatment-plan/4/session-data/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **11. Get Session Treatment Plan Data:**
+- Method: GET
+- URL: `{{base_url}}/session/sessions/5/treatment-plan-data/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **12. Get Comprehensive Client Treatment Plan Details:**
+- Method: GET
+- URL: `{{base_url}}/session/clients/4/treatment-plan-details/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+### 10.6 Session Timer APIs
+
+#### **13. Get Session Timer:**
+- Method: GET
+- URL: `{{base_url}}/session/sessions/1/timer/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **14. Start Session Timer:**
+- Method: POST
+- URL: `{{base_url}}/session/sessions/1/timer/`
+- Headers: 
+  - `Authorization: Bearer {{access_token}}`
+  - `Content-Type: application/json`
+- Body (raw JSON):
+```json
+{
+  "action": "start"
+}
+```
+
+#### **15. Stop Session Timer:**
+- Method: POST
+- URL: `{{base_url}}/session/sessions/1/timer/`
+- Headers: 
+  - `Authorization: Bearer {{access_token}}`
+  - `Content-Type: application/json`
+- Body (raw JSON):
+```json
+{
+  "action": "stop"
+}
+```
+
+### 10.7 Session Form Data APIs
+
+#### **16. Get Session Form Data:**
+- Method: GET
+- URL: `{{base_url}}/session/sessions/1/form-data/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **17. Save Session Form Data:**
+- Method: POST
+- URL: `{{base_url}}/session/sessions/1/form-data/`
+- Headers: 
+  - `Authorization: Bearer {{access_token}}`
+  - `Content-Type: application/json`
+- Body (raw JSON):
+```json
+{
+  "activities": [
+    {
+      "name": "Discrete Trial Training",
+      "duration": 15,
+      "notes": "Client engaged well"
+    }
+  ],
+  "reinforcement_strategies": [
+    {
+      "strategy_type": "Token Economy",
+      "frequency_used": 5,
+      "effectiveness": 4,
+      "notes": "Very effective"
+    }
+  ],
+  "goals_progress": [
+    {
+      "goal": "Requesting Help",
+      "achieved_percentage": 75,
+      "progress": "Improvement",
+      "notes": "Making good progress"
+    }
+  ]
+}
+```
+
+### 10.8 Ocean AI Integration
+
+#### **18. Get Ocean AI Dashboard:**
+- Method: GET
+- URL: `{{base_url}}/session/sessions/1/ocean-dashboard/`
+- Headers: `Authorization: Bearer {{access_token}}`
+
+#### **19. Generate AI Notes:**
+- Method: POST
+- URL: `{{base_url}}/session/sessions/1/save-and-generate-notes/`
+- Headers: 
+  - `Authorization: Bearer {{access_token}}`
+  - `Content-Type: application/json`
+- Body (raw JSON):
+```json
+{
+  "session_notes": "Client showed good engagement during discrete trial training",
+  "activities_completed": ["Discrete Trial Training", "Social Skills Practice"],
+  "goals_worked_on": ["Requesting Help", "Following Directions"],
+  "behavior_notes": "No problem behaviors observed",
+  "reinforcement_used": "Token economy system was very effective"
+}
+```
+
+### 10.9 Pre-configured Postman Collection
+
+#### **Collection Structure:**
+```
+Sapphire Session API
+├── Authentication
+│   └── Login
+├── Session Management
+│   ├── Get All Sessions
+│   ├── Get Session by ID
+│   ├── Create Session
+│   └── Update Session
+├── Analytics & Statistics
+│   ├── Session Statistics
+│   ├── User Sessions
+│   └── User Details
+├── BCBA & Client Management
+│   ├── BCBA Client List
+│   └── BCBA Client List (Debug)
+├── Treatment Plan Integration
+│   ├── Treatment Plan for Client
+│   ├── Session Treatment Plan Data
+│   └── Client Treatment Plan Details
+├── Session Timer
+│   ├── Get Timer
+│   ├── Start Timer
+│   └── Stop Timer
+├── Session Forms
+│   ├── Get Form Data
+│   └── Save Form Data
+└── Ocean AI
+    ├── Ocean Dashboard
+    └── Generate AI Notes
+```
+
+### 10.10 Environment Setup
+
+#### **Create Environment Variables:**
+```json
+{
+  "base_url": "http://localhost:8000/sapphire",
+  "access_token": "",
+  "client_id": "4",
+  "session_id": "1",
+  "user_id": "6"
+}
+```
+
+#### **Pre-request Scripts:**
+Add this to the collection's pre-request script:
+```javascript
+// Auto-set authorization header if token exists
+if (pm.environment.get("access_token")) {
+    pm.request.headers.add({
+        key: "Authorization",
+        value: "Bearer " + pm.environment.get("access_token")
+    });
+}
+```
+
+#### **Tests Scripts:**
+Add this to login request's test script:
+```javascript
+// Save access token to environment
+if (pm.response.code === 200) {
+    const response = pm.response.json();
+    pm.environment.set("access_token", response.access);
+    console.log("Access token saved to environment");
+}
+```
+
+### 10.11 Import Collection
+
+#### **JSON Collection File:**
+Save this as `sapphire-session-api.postman_collection.json`:
+
+```json
+{
+  "info": {
+    "name": "Sapphire Session API",
+    "description": "Complete API collection for Sapphire Session Management System",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login", ""]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('access_token', response.access);",
+                  "    console.log('Access token saved');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Session Management",
+      "item": [
+        {
+          "name": "Get All Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/session/sessions/",
+              "host": ["{{base_url}}"],
+              "path": ["session", "sessions", ""]
+            }
+          }
+        },
+        {
+          "name": "Get Session by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/session/sessions/{{session_id}}/",
+              "host": ["{{base_url}}"],
+              "path": ["session", "sessions", "{{session_id}}", ""]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/sapphire"
+    }
+  ]
+}
+```
+
+### 10.12 Quick Start Guide
+
+1. **Import Collection**: Import the JSON file into Postman
+2. **Set Environment**: Create environment with your server URL
+3. **Login First**: Run the login request to get access token
+4. **Test APIs**: Use any of the pre-configured requests
+5. **Debug**: Use debug mode for troubleshooting
+
+This comprehensive Postman collection covers all the APIs we've created with proper authentication, error handling, and environment management!
 2. Set up environment variables:
    - `base_url`: `http://localhost:8000/sapphire/session`
    - `auth_token`: `{{your_jwt_token}}`
