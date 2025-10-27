@@ -570,12 +570,44 @@ def get_user_details(request, user_id):
         'total_sessions': staff_sessions + client_sessions
     }
     
-    # Get upcoming sessions
+    # Get upcoming sessions count
     upcoming_sessions = Session.objects.filter(
         models.Q(staff=target_user) | models.Q(client=target_user),
-        session_date__gte=timezone.now().date(),
-        status__in=['scheduled', 'in_progress']
+        session_date__gte=timezone.now().date()
     ).count()
+    
+    # Get detailed upcoming sessions
+    upcoming_sessions_details = Session.objects.filter(
+        models.Q(staff=target_user) | models.Q(client=target_user),
+        session_date__gte=timezone.now().date()
+    ).order_by('session_date', 'start_time')[:5]  # Limit to 5 upcoming sessions
+    
+    # Get last session details
+    last_session = Session.objects.filter(
+        models.Q(staff=target_user) | models.Q(client=target_user),
+        session_date__lt=timezone.now().date()
+    ).order_by('-session_date', '-start_time').first()
+    
+    # Get recent session history (last 10 sessions)
+    recent_sessions = Session.objects.filter(
+        models.Q(staff=target_user) | models.Q(client=target_user)
+    ).order_by('-session_date', '-start_time')[:10]
+    
+    # Helper function to serialize session data
+    def serialize_session(session):
+        if not session:
+            return None
+        return {
+            'id': session.id,
+            'session_date': session.session_date.isoformat() if session.session_date else None,
+            'start_time': session.start_time.isoformat() if session.start_time else None,
+            'end_time': session.end_time.isoformat() if session.end_time else None,
+            'duration': str(session.duration) if session.duration else None,
+            'session_notes': session.session_notes,
+            'client_name': session.client.name if session.client else None,
+            'staff_name': session.staff.name if session.staff else None,
+            'role_in_session': 'staff' if session.staff == target_user else 'client'
+        }
     
     try:
         # Ensure all data is JSON serializable
@@ -586,7 +618,12 @@ def get_user_details(request, user_id):
                 'profile': profile_info,
                 'role': role_info,
                 'session_statistics': session_stats,
-                'upcoming_sessions': int(upcoming_sessions)
+                'upcoming_sessions_count': int(upcoming_sessions),
+                'sessions': {
+                    'last_session': serialize_session(last_session),
+                    'upcoming_sessions': [serialize_session(session) for session in upcoming_sessions_details],
+                    'recent_sessions': [serialize_session(session) for session in recent_sessions]
+                }
             }
         }
         
