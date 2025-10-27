@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
+import json
 
 User = get_user_model()
 
@@ -39,11 +40,13 @@ class TreatmentPlan(models.Model):
     
     # Assessment Summary
     assessment_tools_used = models.TextField(help_text="Assessment tools used (e.g., VB-MAPP, FBA, Clinical Observation)")
+    assessment_tools = models.JSONField(default=list, blank=True, help_text="Array of assessment tools used")
     client_strengths = models.TextField(help_text="Client's strengths and abilities")
     areas_of_need = models.TextField(help_text="Areas where client needs support")
     
     # Intervention Strategies
     reinforcement_strategies = models.TextField(help_text="Reinforcement strategies to be used")
+    reinforcement_strategies_array = models.JSONField(default=list, blank=True, help_text="Array of reinforcement strategies with details")
     prompting_hierarchy = models.TextField(help_text="Prompting hierarchy approach")
     behavior_interventions = models.TextField(help_text="Behavior intervention strategies")
     
@@ -65,6 +68,45 @@ class TreatmentPlan(models.Model):
         verbose_name = "Treatment Plan"
         verbose_name_plural = "Treatment Plans"
     
+    def get_assessment_tools_list(self):
+        """Get assessment tools as a list"""
+        if isinstance(self.assessment_tools, str):
+            try:
+                return json.loads(self.assessment_tools)
+            except json.JSONDecodeError:
+                return []
+        return self.assessment_tools or []
+    
+    def set_assessment_tools_list(self, tools_list):
+        """Set assessment tools from a list"""
+        self.assessment_tools = tools_list
+    
+    def get_reinforcement_strategies_list(self):
+        """Get reinforcement strategies as a list"""
+        if isinstance(self.reinforcement_strategies_array, str):
+            try:
+                return json.loads(self.reinforcement_strategies_array)
+            except json.JSONDecodeError:
+                return []
+        return self.reinforcement_strategies_array or []
+    
+    def set_reinforcement_strategies_list(self, strategies_list):
+        """Set reinforcement strategies from a list"""
+        self.reinforcement_strategies_array = strategies_list
+    
+    def add_assessment_tool(self, tool_name):
+        """Add a single assessment tool to the list"""
+        tools = self.get_assessment_tools_list()
+        if tool_name not in tools:
+            tools.append(tool_name)
+            self.set_assessment_tools_list(tools)
+    
+    def add_reinforcement_strategy(self, strategy_data):
+        """Add a reinforcement strategy to the list"""
+        strategies = self.get_reinforcement_strategies_list()
+        strategies.append(strategy_data)
+        self.set_reinforcement_strategies_list(strategies)
+
     def __str__(self):
         return f"Treatment Plan for {self.client_name} ({self.client_id})"
 

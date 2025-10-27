@@ -27,8 +27,8 @@ class TreatmentPlanSerializer(serializers.ModelSerializer):
         model = TreatmentPlan
         fields = [
             'id', 'client_name', 'client_id', 'bcba', 'bcba_name', 'bcba_email',
-            'plan_type', 'assessment_tools_used', 'client_strengths', 'areas_of_need',
-            'reinforcement_strategies', 'prompting_hierarchy', 'behavior_interventions',
+            'plan_type', 'assessment_tools_used', 'assessment_tools', 'client_strengths', 'areas_of_need',
+            'reinforcement_strategies', 'reinforcement_strategies_array', 'prompting_hierarchy', 'behavior_interventions',
             'data_collection_methods', 'status', 'priority',
             'created_at', 'updated_at', 'submitted_at', 'approved_at',
             'goals', 'goals_count'
@@ -101,8 +101,8 @@ class TreatmentPlanCreateSerializer(serializers.ModelSerializer):
         model = TreatmentPlan
         fields = [
             'client_name', 'client_id', 'bcba', 'plan_type',
-            'assessment_tools_used', 'client_strengths', 'areas_of_need',
-            'reinforcement_strategies', 'prompting_hierarchy', 'behavior_interventions',
+            'assessment_tools_used', 'assessment_tools', 'client_strengths', 'areas_of_need',
+            'reinforcement_strategies', 'reinforcement_strategies_array', 'prompting_hierarchy', 'behavior_interventions',
             'data_collection_methods', 'priority', 'goals'
         ]
     
