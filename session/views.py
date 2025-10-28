@@ -333,7 +333,7 @@ def preview_session(request):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def upcoming_sessions(request):
-    """API endpoint for getting upcoming sessions"""
+    """API endpoint for getting upcoming sessions only (scheduled and in_progress)"""
     user = request.user
     queryset = Session.objects.select_related('client', 'staff').filter(
         session_date__gte=timezone.now().date(),
@@ -355,8 +355,104 @@ def upcoming_sessions(request):
         # Default: users can only see their own sessions
         queryset = queryset.filter(staff=user)
     
+    # Apply additional filters
+    client_id = request.query_params.get('client_id')
+    if client_id:
+        queryset = queryset.filter(client_id=client_id)
+    
+    staff_id = request.query_params.get('staff_id')
+    if staff_id:
+        queryset = queryset.filter(staff_id=staff_id)
+    
     serializer = SessionListSerializer(queryset.order_by('session_date', 'start_time'), many=True)
-    return Response(serializer.data)
+    return Response({
+        'upcoming_sessions': serializer.data,
+        'total_sessions': len(serializer.data),
+        'message': 'Upcoming sessions only (scheduled and in_progress)'
+    })
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def completed_sessions(request):
+    """API endpoint for getting completed sessions only"""
+    user = request.user
+    queryset = Session.objects.select_related('client', 'staff').filter(
+        status='completed'
+    )
+    
+    # Role-based access control
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name in ['Admin', 'Superadmin']:
+            # Admin can see all completed sessions
+            pass
+        elif role_name in ['RBT', 'BCBA']:
+            queryset = queryset.filter(staff=user)
+        elif role_name == 'Clients/Parent':
+            queryset = queryset.filter(client=user)
+    else:
+        # Default: users can only see their own sessions
+        queryset = queryset.filter(staff=user)
+    
+    # Apply additional filters
+    client_id = request.query_params.get('client_id')
+    if client_id:
+        queryset = queryset.filter(client_id=client_id)
+    
+    staff_id = request.query_params.get('staff_id')
+    if staff_id:
+        queryset = queryset.filter(staff_id=staff_id)
+    
+    # Date range filters
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    
+    if start_date:
+        try:
+            from datetime import datetime
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(session_date__gte=start_date_obj)
+        except ValueError:
+            return Response(
+                {'error': 'Invalid start_date format. Use YYYY-MM-DD'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    if end_date:
+        try:
+            from datetime import datetime
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(session_date__lte=end_date_obj)
+        except ValueError:
+            return Response(
+                {'error': 'Invalid end_date format. Use YYYY-MM-DD'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    # Order by session date and time (most recent first)
+    queryset = queryset.order_by('-session_date', '-start_time')
+    
+    # Pagination
+    page_size = int(request.query_params.get('page_size', 20))
+    page = int(request.query_params.get('page', 1))
+    
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    
+    total_sessions = queryset.count()
+    sessions_page = queryset[start_index:end_index]
+    
+    serializer = SessionListSerializer(sessions_page, many=True)
+    
+    return Response({
+        'completed_sessions': serializer.data,
+        'total_sessions': total_sessions,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': (total_sessions + page_size - 1) // page_size,
+        'message': 'Completed sessions only'
+    })
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
