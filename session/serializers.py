@@ -70,6 +70,31 @@ class SessionNoteSerializer(serializers.ModelSerializer):
         model = SessionNote
         fields = ['id', 'note_content', 'note_type', 'created_at']
 
+class TimeTrackerSerializer(serializers.ModelSerializer):
+    """Serializer for TimeTracker model"""
+    duration = serializers.ReadOnlyField()
+    duration_display = serializers.ReadOnlyField()
+    created_by = UserSerializer(read_only=True)
+    
+    class Meta:
+        model = TimeTracker
+        fields = [
+            'id', 'session', 'time_type', 'start_time', 'end_time',
+            'description', 'created_by', 'duration', 'duration_display',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['created_by', 'created_at', 'updated_at']
+
+    def validate(self, data):
+        """Validate that end_time is after start_time"""
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        
+        if start_time and end_time and end_time <= start_time:
+            raise serializers.ValidationError("End time must be after start time")
+        
+        return data
+
 class SessionListSerializer(serializers.ModelSerializer):
     """Simplified serializer for session lists"""
     client = UserSerializer(read_only=True)
@@ -157,31 +182,6 @@ class SessionPreviewSerializer(serializers.Serializer):
         except Session.DoesNotExist:
             raise serializers.ValidationError("Session not found")
         return value
-
-class TimeTrackerSerializer(serializers.ModelSerializer):
-    """Serializer for TimeTracker model"""
-    duration = serializers.ReadOnlyField()
-    duration_display = serializers.ReadOnlyField()
-    created_by = UserSerializer(read_only=True)
-    
-    class Meta:
-        model = TimeTracker
-        fields = [
-            'id', 'session', 'time_type', 'start_time', 'end_time',
-            'description', 'created_by', 'duration', 'duration_display',
-            'created_at', 'updated_at'
-        ]
-        read_only_fields = ['created_by', 'created_at', 'updated_at']
-
-    def validate(self, data):
-        """Validate that end_time is after start_time"""
-        start_time = data.get('start_time')
-        end_time = data.get('end_time')
-        
-        if start_time and end_time and end_time <= start_time:
-            raise serializers.ValidationError("End time must be after start time")
-        
-        return data
 
 class TimeTrackerCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating TimeTracker entries"""
