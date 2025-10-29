@@ -763,7 +763,6 @@ def get_user_details(request, user_id):
         
         # Admin and Superadmin can see any user details
         if role_name not in ['Admin', 'Superadmin']:
-            # RBT and BCBA can see their own details and their client lists
             if role_name in ['RBT', 'BCBA']:
                 # Allow RBT and BCBA to see their own details
                 if current_user.id != int(user_id):
