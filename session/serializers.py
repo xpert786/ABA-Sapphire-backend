@@ -95,6 +95,7 @@ class SessionDetailSerializer(serializers.ModelSerializer):
     goal_progress = GoalProgressSerializer(many=True, read_only=True)
     incidents = IncidentSerializer(many=True, read_only=True)
     notes = SessionNoteSerializer(many=True, read_only=True)
+    time_trackers = TimeTrackerSerializer(many=True, read_only=True)
     
     class Meta:
         model = Session
@@ -103,7 +104,7 @@ class SessionDetailSerializer(serializers.ModelSerializer):
             'status', 'session_notes', 'duration', 'location', 'service_type',
             'created_at', 'updated_at', 'timer', 'additional_times', 'checklist_items',
             'activities', 'reinforcement_strategies', 'abc_events', 'goal_progress',
-            'incidents', 'notes'
+            'incidents', 'notes', 'time_trackers'
         ]
 
 class SessionCreateUpdateSerializer(serializers.ModelSerializer):

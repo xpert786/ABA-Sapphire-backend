@@ -33,7 +33,7 @@ env/
 
 # Django static and media
 /staticfiles/
-/media/
+/media/intake_documents/
 /node_modules/
 
 # ===============================

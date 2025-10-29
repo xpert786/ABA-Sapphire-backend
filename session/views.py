@@ -89,10 +89,10 @@ class SessionDetailView(generics.RetrieveUpdateDestroyAPIView):
     
     def get_queryset(self):
         user = self.request.user
-        queryset = Session.objects.select_related('client', 'staff').prefetch_related(
+        queryset = Session.objects.select_related('client', 'staff', 'client__role', 'staff__role').prefetch_related(
             'timer', 'additional_times', 'checklist_items', 'activities',
             'reinforcement_strategies', 'abc_events', 'goal_progress',
-            'incidents', 'notes'
+            'incidents', 'notes', 'time_trackers'
         )
         
         # Filter based on user role
@@ -374,9 +374,20 @@ def upcoming_sessions(request):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def completed_sessions(request):
-    """API endpoint for getting completed sessions only"""
+    """API endpoint for getting completed sessions with all details"""
     user = request.user
-    queryset = Session.objects.select_related('client', 'staff').filter(
+    queryset = Session.objects.select_related('client', 'staff', 'client__role', 'staff__role').prefetch_related(
+        'timer',
+        'additional_times',
+        'checklist_items',
+        'activities',
+        'reinforcement_strategies',
+        'abc_events',
+        'goal_progress',
+        'incidents',
+        'notes',
+        'time_trackers'
+    ).filter(
         status='completed'
     )
     
@@ -443,7 +454,8 @@ def completed_sessions(request):
     total_sessions = queryset.count()
     sessions_page = queryset[start_index:end_index]
     
-    serializer = SessionListSerializer(sessions_page, many=True)
+    # Use SessionDetailSerializer to get all session details
+    serializer = SessionDetailSerializer(sessions_page, many=True)
     
     return Response({
         'completed_sessions': serializer.data,
@@ -451,7 +463,174 @@ def completed_sessions(request):
         'page': page,
         'page_size': page_size,
         'total_pages': (total_sessions + page_size - 1) // page_size,
-        'message': 'Completed sessions only'
+        'message': 'Completed sessions with all details'
+    })
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def all_sessions_with_details(request):
+    """API endpoint for getting all sessions with complete details"""
+    user = request.user
+    queryset = Session.objects.select_related('client', 'staff', 'client__role', 'staff__role').prefetch_related(
+        'timer',
+        'additional_times',
+        'checklist_items',
+        'activities',
+        'reinforcement_strategies',
+        'abc_events',
+        'goal_progress',
+        'incidents',
+        'notes',
+        'time_trackers'
+    ).all()
+    
+    # Role-based access control
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name in ['Admin', 'Superadmin']:
+            # Admin can see all sessions
+            pass
+        elif role_name in ['RBT', 'BCBA']:
+            queryset = queryset.filter(staff=user)
+        elif role_name == 'Clients/Parent':
+            queryset = queryset.filter(client=user)
+    else:
+        # Default: users can only see their own sessions
+        queryset = queryset.filter(
+            models.Q(staff=user) | models.Q(client=user)
+        )
+    
+    # Apply filters
+    status_filter = request.query_params.get('status')
+    if status_filter:
+        queryset = queryset.filter(status=status_filter)
+    
+    client_id = request.query_params.get('client_id')
+    if client_id:
+        queryset = queryset.filter(client_id=client_id)
+    
+    staff_id = request.query_params.get('staff_id')
+    if staff_id:
+        queryset = queryset.filter(staff_id=staff_id)
+    
+    # Date range filters
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    
+    if start_date:
+        try:
+            from datetime import datetime
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(session_date__gte=start_date_obj)
+        except ValueError:
+            return Response(
+                {'error': 'Invalid start_date format. Use YYYY-MM-DD'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    if end_date:
+        try:
+            from datetime import datetime
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(session_date__lte=end_date_obj)
+        except ValueError:
+            return Response(
+                {'error': 'Invalid end_date format. Use YYYY-MM-DD'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    # Order by session date and time (most recent first)
+    queryset = queryset.order_by('-session_date', '-start_time')
+    
+    # Pagination
+    page_size = int(request.query_params.get('page_size', 20))
+    page = int(request.query_params.get('page', 1))
+    
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    
+    total_sessions = queryset.count()
+    sessions_page = queryset[start_index:end_index]
+    
+    # Use SessionDetailSerializer to get all session details
+    serializer = SessionDetailSerializer(sessions_page, many=True)
+    
+    return Response({
+        'sessions': serializer.data,
+        'total_sessions': total_sessions,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': (total_sessions + page_size - 1) // page_size,
+        'message': 'All sessions with complete details'
+    })
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_session_details(request, session_id):
+    """API endpoint for getting detailed information for a particular session"""
+    try:
+        session = Session.objects.select_related('client', 'staff', 'client__role', 'staff__role').prefetch_related(
+            'timer',
+            'additional_times',
+            'checklist_items',
+            'activities',
+            'reinforcement_strategies',
+            'abc_events',
+            'goal_progress',
+            'incidents',
+            'notes',
+            'time_trackers'
+        ).get(id=session_id)
+    except Session.DoesNotExist:
+        return Response(
+            {'error': 'Session not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Check permissions
+    user = request.user
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name in ['Admin', 'Superadmin']:
+            # Admin can see any session
+            pass
+        elif role_name in ['RBT', 'BCBA']:
+            # RBT and BCBA can see sessions they're assigned to
+            if session.staff != user:
+                return Response(
+                    {'error': 'You can only view sessions assigned to you'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        elif role_name == 'Clients/Parent':
+            # Clients can see their own sessions
+            if session.client != user:
+                return Response(
+                    {'error': 'You can only view your own sessions'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        else:
+            # Default: users can only see their own sessions
+            if session.staff != user and session.client != user:
+                return Response(
+                    {'error': 'You can only view your own sessions'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+    else:
+        # Default: users can only see their own sessions
+        if session.staff != user and session.client != user:
+            return Response(
+                {'error': 'You can only view your own sessions'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+    
+    # Serialize the session with all details
+    serializer = SessionDetailSerializer(session)
+    
+    return Response({
+        'session': serializer.data,
+        'message': f'Details for session {session_id}'
     })
 
 @api_view(['GET'])
