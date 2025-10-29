@@ -333,7 +333,7 @@ def preview_session(request):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def upcoming_sessions(request):
-    """API endpoint for getting upcoming sessions"""
+    """API endpoint for getting upcoming sessions only (scheduled and in_progress)"""
     user = request.user
     queryset = Session.objects.select_related('client', 'staff').filter(
         session_date__gte=timezone.now().date(),
@@ -355,8 +355,104 @@ def upcoming_sessions(request):
         # Default: users can only see their own sessions
         queryset = queryset.filter(staff=user)
     
+    # Apply additional filters
+    client_id = request.query_params.get('client_id')
+    if client_id:
+        queryset = queryset.filter(client_id=client_id)
+    
+    staff_id = request.query_params.get('staff_id')
+    if staff_id:
+        queryset = queryset.filter(staff_id=staff_id)
+    
     serializer = SessionListSerializer(queryset.order_by('session_date', 'start_time'), many=True)
-    return Response(serializer.data)
+    return Response({
+        'upcoming_sessions': serializer.data,
+        'total_sessions': len(serializer.data),
+        'message': 'Upcoming sessions only (scheduled and in_progress)'
+    })
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def completed_sessions(request):
+    """API endpoint for getting completed sessions only"""
+    user = request.user
+    queryset = Session.objects.select_related('client', 'staff').filter(
+        status='completed'
+    )
+    
+    # Role-based access control
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        if role_name in ['Admin', 'Superadmin']:
+            # Admin can see all completed sessions
+            pass
+        elif role_name in ['RBT', 'BCBA']:
+            queryset = queryset.filter(staff=user)
+        elif role_name == 'Clients/Parent':
+            queryset = queryset.filter(client=user)
+    else:
+        # Default: users can only see their own sessions
+        queryset = queryset.filter(staff=user)
+    
+    # Apply additional filters
+    client_id = request.query_params.get('client_id')
+    if client_id:
+        queryset = queryset.filter(client_id=client_id)
+    
+    staff_id = request.query_params.get('staff_id')
+    if staff_id:
+        queryset = queryset.filter(staff_id=staff_id)
+    
+    # Date range filters
+    start_date = request.query_params.get('start_date')
+    end_date = request.query_params.get('end_date')
+    
+    if start_date:
+        try:
+            from datetime import datetime
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(session_date__gte=start_date_obj)
+        except ValueError:
+            return Response(
+                {'error': 'Invalid start_date format. Use YYYY-MM-DD'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    if end_date:
+        try:
+            from datetime import datetime
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            queryset = queryset.filter(session_date__lte=end_date_obj)
+        except ValueError:
+            return Response(
+                {'error': 'Invalid end_date format. Use YYYY-MM-DD'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    # Order by session date and time (most recent first)
+    queryset = queryset.order_by('-session_date', '-start_time')
+    
+    # Pagination
+    page_size = int(request.query_params.get('page_size', 20))
+    page = int(request.query_params.get('page', 1))
+    
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    
+    total_sessions = queryset.count()
+    sessions_page = queryset[start_index:end_index]
+    
+    serializer = SessionListSerializer(sessions_page, many=True)
+    
+    return Response({
+        'completed_sessions': serializer.data,
+        'total_sessions': total_sessions,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': (total_sessions + page_size - 1) // page_size,
+        'message': 'Completed sessions only'
+    })
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
@@ -488,12 +584,45 @@ def get_user_details(request, user_id):
         
         # Admin and Superadmin can see any user details
         if role_name not in ['Admin', 'Superadmin']:
-            # Regular users can only see their own details
-            if current_user.id != int(user_id):
-                return Response(
-                    {'error': 'You can only view your own user details'}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
+            if role_name in ['RBT', 'BCBA']:
+                # Allow RBT and BCBA to see their own details
+                if current_user.id != int(user_id):
+                    # Check if the requested user is a client of this RBT/BCBA
+                    try:
+                        from django.contrib.auth import get_user_model
+                        User = get_user_model()
+                        target_user = User.objects.select_related('role').get(id=user_id)
+                        target_role_name = target_user.role.name if hasattr(target_user.role, 'name') else str(target_user.role)
+                        
+                        # Check if target user is a client and if they have sessions with current user
+                        if target_role_name in ['Client', 'Clients/Parent']:
+                            has_sessions = Session.objects.filter(
+                                staff=current_user,
+                                client=target_user
+                            ).exists()
+                            
+                            if not has_sessions:
+                                return Response(
+                                    {'error': 'You can only view details of your assigned clients'}, 
+                                    status=status.HTTP_403_FORBIDDEN
+                                )
+                        else:
+                            return Response(
+                                {'error': 'You can only view your own details or your assigned clients'}, 
+                                status=status.HTTP_403_FORBIDDEN
+                            )
+                    except User.DoesNotExist:
+                        return Response(
+                            {'error': 'User not found'}, 
+                            status=status.HTTP_404_NOT_FOUND
+                        )
+            else:
+                # Regular users can only see their own details
+                if current_user.id != int(user_id):
+                    return Response(
+                        {'error': 'You can only view your own user details'}, 
+                        status=status.HTTP_403_FORBIDDEN
+                    )
     else:
         # Default: users can only see their own details
         if current_user.id != int(user_id):
@@ -609,6 +738,84 @@ def get_user_details(request, user_id):
             'role_in_session': 'staff' if session.staff == target_user else 'client'
         }
     
+    # Get client list for RBT and BCBA users
+    client_list = []
+    if hasattr(current_user, 'role') and current_user.role:
+        role_name = current_user.role.name if hasattr(current_user.role, 'name') else str(current_user.role)
+        
+        if role_name in ['RBT', 'BCBA']:
+            # Get clients assigned to this RBT/BCBA
+            if role_name == 'BCBA':
+                # BCBA can see clients assigned via supervisor field or session history
+                clients = User.objects.filter(
+                    models.Q(supervisor=current_user) | 
+                    models.Q(id__in=Session.objects.filter(staff=current_user).values_list('client_id', flat=True).distinct()),
+                    role__name__in=['Client', 'Clients/Parent']
+                ).select_related('role').distinct().order_by('first_name', 'last_name')
+            else:  # RBT
+                # RBT can see clients from their session history
+                client_ids = Session.objects.filter(staff=current_user).values_list('client_id', flat=True).distinct()
+                clients = User.objects.filter(
+                    id__in=client_ids,
+                    role__name__in=['Client', 'Clients/Parent']
+                ).select_related('role').order_by('first_name', 'last_name')
+            
+            # Build client list with additional information
+            for client in clients:
+                # Get session statistics for this client
+                total_sessions = Session.objects.filter(
+                    client=client, 
+                    staff=current_user
+                ).count()
+                
+                completed_sessions = Session.objects.filter(
+                    client=client, 
+                    staff=current_user, 
+                    status='completed'
+                ).count()
+                
+                # Get recent sessions (last 30 days)
+                from datetime import timedelta
+                recent_date = timezone.now().date() - timedelta(days=30)
+                recent_sessions = Session.objects.filter(
+                    client=client,
+                    staff=current_user,
+                    session_date__gte=recent_date
+                ).count()
+                
+                # Get upcoming sessions
+                upcoming_sessions = Session.objects.filter(
+                    client=client,
+                    staff=current_user,
+                    session_date__gte=timezone.now().date()
+                ).count()
+                
+                # Get last session with this client
+                last_session_with_client = Session.objects.filter(
+                    client=client,
+                    staff=current_user
+                ).order_by('-session_date', '-start_time').first()
+                
+                client_info = {
+                    'id': int(client.id),
+                    'username': str(client.username),
+                    'name': client.get_full_name() or client.username,
+                    'email': client.email or '',
+                    'phone': getattr(client, 'phone', '') or '',
+                    'role': {
+                        'id': client.role.id if client.role else None,
+                        'name': client.role.name if client.role else 'No role'
+                    },
+                    'session_statistics': {
+                        'total_sessions': total_sessions,
+                        'completed_sessions': completed_sessions,
+                        'recent_sessions': recent_sessions,
+                        'upcoming_sessions': upcoming_sessions
+                    },
+                    'last_session': serialize_session(last_session_with_client) if last_session_with_client else None
+                }
+                client_list.append(client_info)
+
     try:
         # Ensure all data is JSON serializable
         response_data = {
@@ -626,6 +833,11 @@ def get_user_details(request, user_id):
                 }
             }
         }
+        
+        # Add client list for RBT and BCBA users
+        if client_list:
+            response_data['clients'] = client_list
+            response_data['total_clients'] = len(client_list)
         
         return Response(response_data)
         
