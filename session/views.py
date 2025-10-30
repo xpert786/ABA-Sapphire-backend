@@ -3333,12 +3333,15 @@ class AISuggestionView(APIView):
             'goals': goals,
         }
 
-        # Simple suggestion using first available goal
-        suggestion = (
-            f"Suggested question: What strategies have been most effective in achieving '{goals[0]}'?"
-            if goals else
-            "No goals available for this treatment plan. What initial strategies should we consider?"
-        )
+        import datetime
+        now = datetime.datetime.utcnow()
+        n_goals = len(goals)
+        if n_goals > 0:
+            suggestion_index = (now.minute % n_goals)
+            goal = goals[suggestion_index]
+            suggestion = f"Suggested question: What strategies have been most effective in achieving '{goal}'?"
+        else:
+            suggestion = "No goals available for this treatment plan. What initial strategies should we consider?"
 
         return Response({
             'treatment_plan': treatment_details,
