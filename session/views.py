@@ -155,7 +155,7 @@ class SessionTimerView(APIView):
                             ai_suggestion = suggestion
                     except Exception:
                         # Swallow exceptions to avoid blocking timer start
-                        pass
+                        return Response({'error': 'Failed to generate AI suggestion'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             elif action == 'stop':
                 if timer.is_running:
                     timer.end_time = timezone.now()
