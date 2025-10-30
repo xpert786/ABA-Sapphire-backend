@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction, models
 from datetime import timedelta
+from treatment_plan.models import TreatmentPlan
 import json
 
 from .models import (
@@ -3311,14 +3312,34 @@ class AISuggestionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, treatment_plan_id):
-        # Simulate fetching treatment plan details (should use actual TreatmentPlan model)
+        # Fetch the TreatmentPlan from the database
+        try:
+            from treatment_plan.models import TreatmentPlan
+            treatment_plan = TreatmentPlan.objects.get(pk=treatment_plan_id)
+        except Exception:
+            return Response({"error": "Treatment plan not found."}, status=404)
+
+        # Gather related goals
+        try:
+            goals = list(treatment_plan.goals.values_list('goal_description', flat=True))
+        except Exception:
+            goals = []
+
         treatment_details = {
-            'id': treatment_plan_id,
-            'title': f'Mock Plan {treatment_plan_id}',
-            'goals': ['Reduce disruptive behavior', 'Improve communication skills'],
+            'id': int(treatment_plan.id),
+            'title': str(treatment_plan.plan_type),
+            'client_name': str(getattr(treatment_plan, 'client_name', '')),
+            'bcba': str(treatment_plan.bcba.get_full_name() or treatment_plan.bcba.username) if getattr(treatment_plan, 'bcba', None) else None,
+            'goals': goals,
         }
-        # Simulate AI call (replace with OpenAI or other service)
-        suggestion = f"Suggested question: What strategies have been most effective in achieving '{treatment_details['goals'][0]}'?"
+
+        # Simple suggestion using first available goal
+        suggestion = (
+            f"Suggested question: What strategies have been most effective in achieving '{goals[0]}'?"
+            if goals else
+            "No goals available for this treatment plan. What initial strategies should we consider?"
+        )
+
         return Response({
             'treatment_plan': treatment_details,
             'ai_suggestion': suggestion
