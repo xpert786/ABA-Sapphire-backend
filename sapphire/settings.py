@@ -56,7 +56,7 @@ LOCAL_APPS = [
     'treatment_plan',
 ]
 
-INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS + ['django_crontab']
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -217,3 +217,7 @@ LOGGING = {
         'level': 'INFO',
     },
 }
+
+CRONJOBS = [
+    ('* * * * *', 'django.core.management.call_command', ['rbt_session_ai_suggestions']),
+]
