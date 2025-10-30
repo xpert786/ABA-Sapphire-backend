@@ -140,6 +140,44 @@ class SessionTimerView(APIView):
                     timer.is_running = True
                     session.status = 'in_progress'
                     session.save()
+                    # Optional: trigger AI suggestion when an RBT starts the session
+                    try:
+                        treatment_plan_id = request.data.get('treatment_plan_id')
+                        if treatment_plan_id:
+                            # Generate AI suggestion and save as a session note
+                            from django.conf import settings
+                            from treatment_plan.models import TreatmentPlan
+                            import openai
+
+                            openai.api_key = getattr(settings, 'OPENAI_API_KEY', None)
+
+                            tp = TreatmentPlan.objects.get(pk=int(treatment_plan_id))
+                            goals = list(tp.goals.values_list('goal_description', flat=True))
+                            prompt = (
+                                f"Treatment Plan Type: {tp.plan_type}\n"
+                                f"Client: {tp.client_name}\n"
+                                f"Goals: {', '.join(goals) if goals else 'None'}\n\n"
+                                "Suggest one helpful, specific question a therapist should ask next for this client and treatment plan."
+                            )
+                            ai_response = openai.ChatCompletion.create(
+                                model="gpt-3.5-turbo",
+                                messages=[
+                                    {"role": "system", "content": "You are an expert therapy suggestion AI."},
+                                    {"role": "user", "content": prompt},
+                                ],
+                                max_tokens=100
+                            )
+                            suggestion = ai_response['choices'][0]['message']['content'].strip()
+
+                            # Save suggestion as a session note
+                            SessionNote.objects.create(
+                                session=session,
+                                note_content=suggestion,
+                                note_type='ai_suggestion'
+                            )
+                    except Exception:
+                        # Swallow exceptions to avoid blocking timer start
+                        pass
             elif action == 'stop':
                 if timer.is_running:
                     timer.end_time = timezone.now()
