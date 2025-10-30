@@ -3365,6 +3365,8 @@ class AISuggestionView(APIView):
         )
 
         # ✅ Use the new OpenAI client interface
+        from openai import OpenAI
+        from django.conf import settings
         client = OpenAI(api_key=getattr(settings, 'OPENAI_API_KEY', None))
 
         try:
