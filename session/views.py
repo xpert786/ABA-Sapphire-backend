@@ -3304,3 +3304,22 @@ def generate_ai_session_notes(request, session_id):
             {'error': f'Failed to generate notes: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+class AISuggestionView(APIView):
+    """
+    Receives a treatment_plan_id, fetches plan details, calls AI for suggestion questions.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, treatment_plan_id):
+        # Simulate fetching treatment plan details (should use actual TreatmentPlan model)
+        treatment_details = {
+            'id': treatment_plan_id,
+            'title': f'Mock Plan {treatment_plan_id}',
+            'goals': ['Reduce disruptive behavior', 'Improve communication skills'],
+        }
+        # Simulate AI call (replace with OpenAI or other service)
+        suggestion = f"Suggested question: What strategies have been most effective in achieving '{treatment_details['goals'][0]}'?"
+        return Response({
+            'treatment_plan': treatment_details,
+            'ai_suggestion': suggestion
+        }, status=200)
