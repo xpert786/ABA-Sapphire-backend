@@ -3323,3 +3323,22 @@ class AISuggestionView(APIView):
             'treatment_plan': treatment_details,
             'ai_suggestion': suggestion
         }, status=200)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def bcba_client_sessions(request):
+    user = request.user
+    # Ensure user is a BCBA
+    if hasattr(user, 'role') and user.role and user.role.name == 'BCBA':
+        from api.models import CustomUser
+        from .models import Session
+        my_clients = CustomUser.objects.filter(assigned_bcba=user)
+        sessions = Session.objects.filter(client__in=my_clients)
+        status = request.GET.get('status')
+        if status:
+            sessions = sessions.filter(status=status)
+        from .serializers import SessionDetailSerializer
+        serializer = SessionDetailSerializer(sessions, many=True)
+        return Response(serializer.data)
+    return Response({'error': 'Not authorized'}, status=403)

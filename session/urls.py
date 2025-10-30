@@ -57,4 +57,5 @@ urlpatterns = [
 
     # AI suggestion question endpoint
     path('ai-suggestions/<int:treatment_plan_id>/', views.AISuggestionView.as_view(), name='ai-suggestions'),
+    path('bcba-client-sessions/', views.bcba_client_sessions, name='bcba-client-sessions'),
 ]
