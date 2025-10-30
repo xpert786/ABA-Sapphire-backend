@@ -3332,10 +3332,12 @@ class AISuggestionView(APIView):
             'goals': goals,
         }
 
+        # Load OpenAI API key from Django settings (which should source from env/.env)
         import openai
         from django.conf import settings
+        openai.api_key = getattr(settings, 'OPENAI_API_KEY', None)
+
         try:
-            openai.api_key = settings.OPENAI_API_KEY
             prompt = (
                 f"Treatment Plan Type: {treatment_plan.plan_type}\n"
                 f"Client: {treatment_plan.client_name}\n"
