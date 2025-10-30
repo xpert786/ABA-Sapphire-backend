@@ -144,32 +144,8 @@ class SessionTimerView(APIView):
                     try:
                         treatment_plan_id = request.data.get('treatment_plan_id')
                         if treatment_plan_id:
-                            # Generate AI suggestion and save as a session note
-                            from django.conf import settings
-                            from treatment_plan.models import TreatmentPlan
-                            import openai
-
-                            openai.api_key = getattr(settings, 'OPENAI_API_KEY', None)
-
-                            tp = TreatmentPlan.objects.get(pk=int(treatment_plan_id))
-                            goals = list(tp.goals.values_list('goal_description', flat=True))
-                            prompt = (
-                                f"Treatment Plan Type: {tp.plan_type}\n"
-                                f"Client: {tp.client_name}\n"
-                                f"Goals: {', '.join(goals) if goals else 'None'}\n\n"
-                                "Suggest one helpful, specific question a therapist should ask next for this client and treatment plan."
-                            )
-                            ai_response = openai.ChatCompletion.create(
-                                model="gpt-3.5-turbo",
-                                messages=[
-                                    {"role": "system", "content": "You are an expert therapy suggestion AI."},
-                                    {"role": "user", "content": prompt},
-                                ],
-                                max_tokens=100
-                            )
-                            suggestion = ai_response['choices'][0]['message']['content'].strip()
-
-                            # Save suggestion as a session note
+                            from session.utils import generate_ai_suggestion
+                            suggestion = generate_ai_suggestion(int(treatment_plan_id))
                             SessionNote.objects.create(
                                 session=session,
                                 note_content=suggestion,
