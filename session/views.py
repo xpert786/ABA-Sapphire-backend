@@ -133,6 +133,7 @@ class SessionTimerView(APIView):
         if serializer.is_valid():
             timer, created = SessionTimer.objects.get_or_create(session=session)
             action = serializer.validated_data['action']
+            ai_suggestion = None
             
             if action == 'start':
                 if not timer.is_running:
@@ -151,6 +152,7 @@ class SessionTimerView(APIView):
                                 note_content=suggestion,
                                 note_type='ai_suggestion'
                             )
+                            ai_suggestion = suggestion
                     except Exception:
                         # Swallow exceptions to avoid blocking timer start
                         pass
@@ -165,7 +167,10 @@ class SessionTimerView(APIView):
                     session.save()
             
             timer.save()
-            return Response(SessionTimerSerializer(timer).data)
+            data = SessionTimerSerializer(timer).data
+            if ai_suggestion is not None:
+                data['ai_suggestion'] = ai_suggestion
+            return Response(data)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
