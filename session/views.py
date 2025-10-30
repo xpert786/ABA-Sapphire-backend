@@ -3326,7 +3326,7 @@ def generate_ai_session_notes(request, session_id):
         )
 class AISuggestionView(APIView):
     """
-    Receives a treatment_plan_id, fetches plan details, calls AI for suggestion questions.
+    Receives a treatment_plan_id, fetches plan details, and calls OpenAI for a suggestion question.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -3334,8 +3334,10 @@ class AISuggestionView(APIView):
         # Fetch the TreatmentPlan from the database
         try:
             treatment_plan = TreatmentPlan.objects.get(pk=treatment_plan_id)
-        except Exception:
+        except TreatmentPlan.DoesNotExist:
             return Response({"error": "Treatment plan not found."}, status=404)
+        except Exception as exc:
+            return Response({"error": f"Error fetching treatment plan: {str(exc)}"}, status=500)
 
         # Gather related goals
         try:
@@ -3343,44 +3345,45 @@ class AISuggestionView(APIView):
         except Exception:
             goals = []
 
+        # Prepare treatment plan details
         treatment_details = {
             'id': int(treatment_plan.id),
             'title': str(treatment_plan.plan_type),
             'client_name': str(getattr(treatment_plan, 'client_name', '')),
-            'bcba': str(treatment_plan.bcba.get_full_name() or treatment_plan.bcba.username) if getattr(treatment_plan, 'bcba', None) else None,
+            'bcba': str(treatment_plan.bcba.get_full_name() or treatment_plan.bcba.username)
+            if getattr(treatment_plan, 'bcba', None)
+            else None,
             'goals': goals,
         }
 
-        # Load OpenAI API key from Django settings (which should source from env/.env)
-        import openai
-        from django.conf import settings
-        openai.api_key = getattr(settings, 'OPENAI_API_KEY', None)
+        # Prepare prompt for OpenAI
+        prompt = (
+            f"Treatment Plan Type: {treatment_plan.plan_type}\n"
+            f"Client: {treatment_plan.client_name}\n"
+            f"Goals: {', '.join(goals) if goals else 'None'}\n\n"
+            "Suggest one helpful, specific question a therapist should ask next for this client and treatment plan."
+        )
+
+        # ✅ Use the new OpenAI client interface
+        client = OpenAI(api_key=getattr(settings, 'OPENAI_API_KEY', None))
 
         try:
-            prompt = (
-                f"Treatment Plan Type: {treatment_plan.plan_type}\n"
-                f"Client: {treatment_plan.client_name}\n"
-                f"Goals: {', '.join(goals) if goals else 'None'}\n\n"
-                "Suggest one helpful, specific question a therapist should ask next for this client and treatment plan."
-            )
-            ai_response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are an expert therapy suggestion AI."},
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=100
+                max_tokens=100,
             )
-            suggestion = ai_response['choices'][0]['message']['content'].strip()
-        except Exception as e:
-            suggestion = f"AI error: {str(e)}"
+            suggestion = response.choices[0].message.content.strip()
+        except Exception as exc:
+            suggestion = f"AI error: {str(exc)}"
 
         return Response({
             'treatment_plan': treatment_details,
             'ai_suggestion': suggestion
         }, status=200)
-
-
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def bcba_client_sessions(request):
