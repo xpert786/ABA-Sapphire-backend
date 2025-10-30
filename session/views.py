@@ -3314,7 +3314,6 @@ class AISuggestionView(APIView):
     def get(self, request, treatment_plan_id):
         # Fetch the TreatmentPlan from the database
         try:
-            from treatment_plan.models import TreatmentPlan
             treatment_plan = TreatmentPlan.objects.get(pk=treatment_plan_id)
         except Exception:
             return Response({"error": "Treatment plan not found."}, status=404)
@@ -3333,15 +3332,27 @@ class AISuggestionView(APIView):
             'goals': goals,
         }
 
-        import datetime
-        now = datetime.datetime.utcnow()
-        n_goals = len(goals)
-        if n_goals > 0:
-            suggestion_index = (now.minute % n_goals)
-            goal = goals[suggestion_index]
-            suggestion = f"Suggested question: What strategies have been most effective in achieving '{goal}'?"
-        else:
-            suggestion = "No goals available for this treatment plan. What initial strategies should we consider?"
+        import openai
+        from django.conf import settings
+        try:
+            openai.api_key = settings.OPENAI_API_KEY
+            prompt = (
+                f"Treatment Plan Type: {treatment_plan.plan_type}\n"
+                f"Client: {treatment_plan.client_name}\n"
+                f"Goals: {', '.join(goals) if goals else 'None'}\n\n"
+                "Suggest one helpful, specific question a therapist should ask next for this client and treatment plan."
+            )
+            ai_response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are an expert therapy suggestion AI."},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=100
+            )
+            suggestion = ai_response['choices'][0]['message']['content'].strip()
+        except Exception as e:
+            suggestion = f"AI error: {str(e)}"
 
         return Response({
             'treatment_plan': treatment_details,
