@@ -470,14 +470,14 @@
 							}
 						],
 						"url": {
-							"raw": "{{base_url}}/sapphire/scheduler/treatment-plans/{{treatment_plan_id}}/client/",
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/{{treatment_plan_id}}/client/",
 							"host": [
 								"{{base_url}}"
 							],
 							"path": [
 								"sapphire",
-								"scheduler",
-								"treatment-plans",
+								"treatment-plan",
+								"plans",
 								"{{treatment_plan_id}}",
 								"client",
 								""

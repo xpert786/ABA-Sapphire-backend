@@ -292,14 +292,14 @@ When `treatment_plan_id` is provided, the system tries to find the client user i
 
 ### New Helper Endpoint
 
-**Endpoint:** `GET /sapphire/scheduler/treatment-plans/{treatment_plan_id}/client/`
+**Endpoint:** `GET /sapphire/treatment-plan/plans/{treatment_plan_id}/client/`
 
 **Description:** 
 Get the client ID and information that will be automatically selected when creating a session with this treatment_plan_id.
 
 **Example Request:**
 ```bash
-GET {{base_url}}/sapphire/scheduler/treatment-plans/1/client/
+GET {{base_url}}/sapphire/treatment-plan/plans/1/client/
 Authorization: Bearer {{auth_token}}
 ```
 
@@ -348,7 +348,7 @@ Authorization: Bearer {{auth_token}}
 **Workflow:**
 ```
 1. User selects treatment plan ID = 1
-2. Call GET /scheduler/treatment-plans/1/client/
+2. Call GET /treatment-plan/plans/1/client/
 3. Response shows matched_client.id = 5
 4. Now you know the client ID!
 5. Create session with treatment_plan_id=1 (client auto-selected)
@@ -362,7 +362,7 @@ Authorization: Bearer {{auth_token}}
 ### Treatment Plans
 - `GET /sapphire/treatment-plan/treatment-plans/` - List all treatment plans
 - `GET /sapphire/treatment-plan/treatment-plans/{id}/` - Get treatment plan details
-- `GET /sapphire/scheduler/treatment-plans/{id}/client/` - **NEW!** Get client ID from treatment plan
+- `GET /sapphire/treatment-plan/plans/{id}/client/` - **NEW!** Get client ID from treatment plan
 
 ### Clients
 - `GET /sapphire/scheduler/clients/` - List all clients

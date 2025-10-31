@@ -13,6 +13,9 @@ urlpatterns = [
     path('plans/<int:treatment_plan_id>/goals/', views.TreatmentGoalListCreateView.as_view(), name='treatment-goal-list-create'),
     path('plans/<int:treatment_plan_id>/goals/<int:pk>/', views.TreatmentGoalDetailView.as_view(), name='treatment-goal-detail'),
     
+    # Client Helper (Get client ID from treatment plan)
+    path('plans/<int:pk>/client/', views.get_client_from_treatment_plan, name='get-client-from-treatment-plan'),
+    
     # Approval URLs
     path('approvals/', views.TreatmentPlanApprovalListView.as_view(), name='treatment-plan-approval-list'),
 ]
