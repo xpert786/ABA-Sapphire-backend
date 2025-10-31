@@ -130,8 +130,9 @@ class SessionSerializer(serializers.ModelSerializer):
         start_time = data.get('start_time')
         end_time = data.get('end_time')
         treatment_plan_id = data.pop('treatment_plan_id', None)
+        client = data.get('client')  # Get client if explicitly provided
         
-        # If treatment_plan_id is provided, fetch the treatment plan and set client automatically
+        # If treatment_plan_id is provided, fetch the treatment plan
         if treatment_plan_id:
             try:
                 from treatment_plan.models import TreatmentPlan
@@ -140,52 +141,74 @@ class SessionSerializer(serializers.ModelSerializer):
                 treatment_plan = TreatmentPlan.objects.get(id=treatment_plan_id)
                 data['treatment_plan'] = treatment_plan
                 
-                # Find the client user based on treatment plan's client_id
-                # Try matching by username, staff_id, or id
-                client_user = None
-                client_id_str = str(treatment_plan.client_id)
-                
-                # Try to find by username
-                try:
-                    client_user = CustomUser.objects.get(username=client_id_str, role__name='Clients/Parent')
-                except CustomUser.DoesNotExist:
-                    pass
-                
-                # Try to find by staff_id if not found
-                if not client_user:
+                # Only auto-select client if client is not explicitly provided
+                if not client:
+                    # Find the client user based on treatment plan's client_id
+                    # Try matching by username, staff_id, or id
+                    client_user = None
+                    client_id_str = str(treatment_plan.client_id)
+                    
+                    # Try to find by username
                     try:
-                        client_user = CustomUser.objects.get(staff_id=client_id_str, role__name='Clients/Parent')
+                        client_user = CustomUser.objects.get(username=client_id_str, role__name='Clients/Parent')
                     except CustomUser.DoesNotExist:
                         pass
-                
-                # Try to find by id if client_id is numeric
-                if not client_user and client_id_str.isdigit():
-                    try:
-                        client_user = CustomUser.objects.get(id=int(client_id_str), role__name='Clients/Parent')
-                    except (CustomUser.DoesNotExist, ValueError):
-                        pass
-                
-                # Try to find by name (partial match)
-                if not client_user:
-                    try:
-                        client_user = CustomUser.objects.filter(
-                            name__icontains=treatment_plan.client_name,
-                            role__name='Clients/Parent'
-                        ).first()
-                    except CustomUser.DoesNotExist:
-                        pass
-                
-                if client_user:
-                    data['client'] = client_user
+                    
+                    # Try to find by staff_id if not found
+                    if not client_user:
+                        try:
+                            client_user = CustomUser.objects.get(staff_id=client_id_str, role__name='Clients/Parent')
+                        except CustomUser.DoesNotExist:
+                            pass
+                    
+                    # Try to find by id if client_id is numeric
+                    if not client_user and client_id_str.isdigit():
+                        try:
+                            client_user = CustomUser.objects.get(id=int(client_id_str), role__name='Clients/Parent')
+                        except (CustomUser.DoesNotExist, ValueError):
+                            pass
+                    
+                    # Try to find by name (partial match)
+                    if not client_user:
+                        try:
+                            client_user = CustomUser.objects.filter(
+                                name__icontains=treatment_plan.client_name,
+                                role__name='Clients/Parent'
+                            ).first()
+                        except CustomUser.DoesNotExist:
+                            pass
+                    
+                    if client_user:
+                        data['client'] = client_user
+                    else:
+                        raise serializers.ValidationError({
+                            'treatment_plan_id': f'Could not find a client user matching treatment plan client_id "{treatment_plan.client_id}" or client_name "{treatment_plan.client_name}". Please specify client manually using the "client" field.'
+                        })
+                # If both treatment_plan_id and client are provided, use the explicit client (user override)
                 else:
-                    raise serializers.ValidationError({
-                        'treatment_plan_id': f'Could not find a client user matching treatment plan client_id "{treatment_plan.client_id}" or client_name "{treatment_plan.client_name}". Please specify client manually.'
-                    })
+                    # Verify the client exists and has the right role
+                    if not hasattr(client, 'role') or not client.role or client.role.name != 'Clients/Parent':
+                        raise serializers.ValidationError({
+                            'client': 'The specified client must have the role "Clients/Parent".'
+                        })
                     
             except TreatmentPlan.DoesNotExist:
                 raise serializers.ValidationError({
                     'treatment_plan_id': 'Treatment plan not found.'
                 })
+        # If only client is provided (no treatment_plan_id), that's also valid
+        elif client:
+            # Verify the client exists and has the right role
+            if not hasattr(client, 'role') or not client.role or client.role.name != 'Clients/Parent':
+                raise serializers.ValidationError({
+                    'client': 'The specified client must have the role "Clients/Parent".'
+                })
+        # If neither is provided, client is required
+        elif 'client' not in data:
+            raise serializers.ValidationError({
+                'client': 'Either "client" or "treatment_plan_id" must be provided.',
+                'treatment_plan_id': 'Either "client" or "treatment_plan_id" must be provided.'
+            })
 
         # Optional: Check for overlapping sessions (commented out to allow overlaps)
         # overlapping = Session.objects.filter(
