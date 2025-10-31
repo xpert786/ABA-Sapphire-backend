@@ -3379,12 +3379,24 @@ class AISuggestionView(APIView):
         except Exception as exc:
             return Response({"error": f"Error fetching session: {str(exc)}"}, status=500)
         
-        # Check permissions
+        # Check permissions - allow staff, client, BCBA, Admin, and Superadmin
+        has_permission = False
         if hasattr(request.user, 'role') and request.user.role:
             role_name = request.user.role.name if hasattr(request.user.role, 'name') else str(request.user.role)
-            if role_name not in ['Admin', 'Superadmin']:
-                if not (session.staff == request.user or session.client == request.user):
-                    return Response({"error": "Permission denied."}, status=403)
+            if role_name in ['Admin', 'Superadmin']:
+                has_permission = True
+            elif role_name in ['RBT', 'BCBA']:
+                # Staff can access their own sessions or sessions of clients they're assigned to
+                has_permission = (session.staff == request.user) or (hasattr(session.client, 'assigned_bcba') and session.client.assigned_bcba == request.user)
+            elif role_name == 'Clients/Parent':
+                # Clients can access their own sessions
+                has_permission = (session.client == request.user)
+        else:
+            # Fallback: allow if user is staff or client for this session
+            has_permission = (session.staff == request.user) or (session.client == request.user)
+        
+        if not has_permission:
+            return Response({"error": "Permission denied. You don't have access to this session."}, status=403)
         
         # Get treatment_plan_id from related scheduler session (backend automatically retrieves it)
         treatment_plan_id = None
