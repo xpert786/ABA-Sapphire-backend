@@ -3379,24 +3379,55 @@ class AISuggestionView(APIView):
         except Exception as exc:
             return Response({"error": f"Error fetching session: {str(exc)}"}, status=500)
         
-        # Check permissions - allow staff, client, BCBA, Admin, and Superadmin
+        # Check permissions - allow staff, client, BCBA (if client assigned to them), Admin, and Superadmin
         has_permission = False
         if hasattr(request.user, 'role') and request.user.role:
             role_name = request.user.role.name if hasattr(request.user.role, 'name') else str(request.user.role)
+            # Admin and Superadmin can access all sessions
             if role_name in ['Admin', 'Superadmin']:
                 has_permission = True
-            elif role_name in ['RBT', 'BCBA']:
-                # Staff can access their own sessions or sessions of clients they're assigned to
-                has_permission = (session.staff == request.user) or (hasattr(session.client, 'assigned_bcba') and session.client.assigned_bcba == request.user)
+            # RBT can access if they're the staff assigned to the session
+            elif role_name == 'RBT':
+                has_permission = (session.staff == request.user)
+            # BCBA can access if:
+            # 1. They are the staff for this session
+            # 2. The client is assigned to them (assigned_bcba)
+            # 3. They have treatment plans for this client
+            elif role_name == 'BCBA':
+                has_permission = (
+                    session.staff == request.user or
+                    (hasattr(session.client, 'assigned_bcba') and session.client.assigned_bcba == request.user)
+                )
+                # Also check if BCBA has treatment plans for this client
+                if not has_permission:
+                    try:
+                        from treatment_plan.models import TreatmentPlan
+                        # Check if BCBA has any treatment plans matching the client
+                        client_identifier = str(session.client.id)
+                        has_treatment_plan = TreatmentPlan.objects.filter(
+                            bcba=request.user
+                        ).filter(
+                            models.Q(client_id=client_identifier) | 
+                            models.Q(client_id=session.client.username) |
+                            models.Q(client_id=getattr(session.client, 'staff_id', '')) |
+                            models.Q(client_name__icontains=session.client.name if hasattr(session.client, 'name') and session.client.name else '')
+                        ).exists()
+                        if has_treatment_plan:
+                            has_permission = True
+                    except Exception:
+                        pass
+            # Clients can access their own sessions
             elif role_name == 'Clients/Parent':
-                # Clients can access their own sessions
                 has_permission = (session.client == request.user)
         else:
             # Fallback: allow if user is staff or client for this session
-            has_permission = (session.staff == request.user) or (session.client == request.user)
+            has_permission = (session.staff == request.user or session.client == request.user)
         
         if not has_permission:
-            return Response({"error": "Permission denied. You don't have access to this session."}, status=403)
+            return Response({
+                "error": "Permission denied. You don't have access to this session.",
+                "detail": f"User {request.user.id} ({request.user.role.name if hasattr(request.user, 'role') and request.user.role else 'No role'}) cannot access session {session_id}"
+            }, status=403)
         
         # Get treatment_plan_id from related scheduler session (backend automatically retrieves it)
         treatment_plan_id = None
