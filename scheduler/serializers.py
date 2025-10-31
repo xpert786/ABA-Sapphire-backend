@@ -100,6 +100,7 @@ class StaffSerializer(serializers.ModelSerializer):
 class SessionSerializer(serializers.ModelSerializer):
     staff_details = StaffSerializer(source='staff', read_only=True)
     client_details = ClientSerializer(source='client', read_only=True)
+    treatment_plan_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     
     def to_representation(self, instance):
         try:
@@ -128,6 +129,63 @@ class SessionSerializer(serializers.ModelSerializer):
         staff = data.get('staff')
         start_time = data.get('start_time')
         end_time = data.get('end_time')
+        treatment_plan_id = data.pop('treatment_plan_id', None)
+        
+        # If treatment_plan_id is provided, fetch the treatment plan and set client automatically
+        if treatment_plan_id:
+            try:
+                from treatment_plan.models import TreatmentPlan
+                from api.models import CustomUser
+                
+                treatment_plan = TreatmentPlan.objects.get(id=treatment_plan_id)
+                data['treatment_plan'] = treatment_plan
+                
+                # Find the client user based on treatment plan's client_id
+                # Try matching by username, staff_id, or id
+                client_user = None
+                client_id_str = str(treatment_plan.client_id)
+                
+                # Try to find by username
+                try:
+                    client_user = CustomUser.objects.get(username=client_id_str, role__name='Clients/Parent')
+                except CustomUser.DoesNotExist:
+                    pass
+                
+                # Try to find by staff_id if not found
+                if not client_user:
+                    try:
+                        client_user = CustomUser.objects.get(staff_id=client_id_str, role__name='Clients/Parent')
+                    except CustomUser.DoesNotExist:
+                        pass
+                
+                # Try to find by id if client_id is numeric
+                if not client_user and client_id_str.isdigit():
+                    try:
+                        client_user = CustomUser.objects.get(id=int(client_id_str), role__name='Clients/Parent')
+                    except (CustomUser.DoesNotExist, ValueError):
+                        pass
+                
+                # Try to find by name (partial match)
+                if not client_user:
+                    try:
+                        client_user = CustomUser.objects.filter(
+                            name__icontains=treatment_plan.client_name,
+                            role__name='Clients/Parent'
+                        ).first()
+                    except CustomUser.DoesNotExist:
+                        pass
+                
+                if client_user:
+                    data['client'] = client_user
+                else:
+                    raise serializers.ValidationError({
+                        'treatment_plan_id': f'Could not find a client user matching treatment plan client_id "{treatment_plan.client_id}" or client_name "{treatment_plan.client_name}". Please specify client manually.'
+                    })
+                    
+            except TreatmentPlan.DoesNotExist:
+                raise serializers.ValidationError({
+                    'treatment_plan_id': 'Treatment plan not found.'
+                })
 
         # Optional: Check for overlapping sessions (commented out to allow overlaps)
         # overlapping = Session.objects.filter(

@@ -105,7 +105,14 @@ class SessionListCreateView(generics.ListCreateAPIView):
             queryset = Session.objects.filter(
                 staff=user,
                 session_date__gte=now.date()  # only future dates (including today)
-            ).order_by('session_date', 'start_time') # ascending order
+            ).select_related('treatment_plan', 'client')
+            
+            # Filter by treatment_plan_id if provided
+            treatment_plan_id = self.request.query_params.get('treatment_plan_id')
+            if treatment_plan_id:
+                queryset = queryset.filter(treatment_plan_id=treatment_plan_id)
+            
+            queryset = queryset.order_by('session_date', 'start_time') # ascending order
             
             # Test the queryset by converting to list to catch Unicode issues early
             list(queryset)

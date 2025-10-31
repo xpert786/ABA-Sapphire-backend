@@ -46,6 +46,17 @@ class Session(models.Model):
         related_name='sessions_as_staff',
         limit_choices_to={'role__name__in': ['RBT', 'BCBA']}  # must be a list
     )
+    
+    # Treatment plan reference (optional)
+    treatment_plan = models.ForeignKey(
+        'treatment_plan.TreatmentPlan',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sessions',
+        help_text='Treatment plan this session is scheduled for'
+    )
+    
     session_date = models.DateField()       # Separate date field
     start_time = models.TimeField()         # Only time
     end_time = models.TimeField()
