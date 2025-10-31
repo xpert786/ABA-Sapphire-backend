@@ -120,7 +120,27 @@ class SessionTimerView(APIView):
         
         timer, created = SessionTimer.objects.get_or_create(session=session)
         serializer = SessionTimerSerializer(timer)
-        return Response(serializer.data)
+        response_data = serializer.data
+        
+        # Add treatment_plan_id from related scheduler session if exists
+        try:
+            from scheduler.models import Session as SchedulerSession
+            scheduler_session = SchedulerSession.objects.filter(
+                client=session.client,
+                staff=session.staff,
+                session_date=session.session_date,
+                start_time=session.start_time,
+                end_time=session.end_time
+            ).first()
+            
+            if scheduler_session and scheduler_session.treatment_plan:
+                response_data['treatment_plan_id'] = scheduler_session.treatment_plan.id
+            else:
+                response_data['treatment_plan_id'] = None
+        except Exception:
+            response_data['treatment_plan_id'] = None
+        
+        return Response(response_data)
     
     def post(self, request, session_id):
         session = get_object_or_404(Session, id=session_id)
@@ -168,6 +188,25 @@ class SessionTimerView(APIView):
             
             timer.save()
             data = SessionTimerSerializer(timer).data
+            
+            # Add treatment_plan_id from related scheduler session if exists
+            try:
+                from scheduler.models import Session as SchedulerSession
+                scheduler_session = SchedulerSession.objects.filter(
+                    client=session.client,
+                    staff=session.staff,
+                    session_date=session.session_date,
+                    start_time=session.start_time,
+                    end_time=session.end_time
+                ).first()
+                
+                if scheduler_session and scheduler_session.treatment_plan:
+                    data['treatment_plan_id'] = scheduler_session.treatment_plan.id
+                else:
+                    data['treatment_plan_id'] = None
+            except Exception:
+                data['treatment_plan_id'] = None
+            
             if ai_suggestion is not None:
                 data['ai_suggestion'] = ai_suggestion
             return Response(data)
@@ -3326,11 +3365,52 @@ def generate_ai_session_notes(request, session_id):
         )
 class AISuggestionView(APIView):
     """
-    Receives a treatment_plan_id, fetches plan details, and calls OpenAI for a suggestion question.
+    Automatically gets treatment_plan_id from session, fetches plan details, and calls OpenAI for a suggestion question.
+    Frontend only needs to pass session_id - treatment_plan_id is retrieved automatically from the backend.
     """
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request, treatment_plan_id):
+    def get(self, request, session_id):
+        # Get the session first
+        try:
+            session = Session.objects.get(id=session_id)
+        except Session.DoesNotExist:
+            return Response({"error": "Session not found."}, status=404)
+        except Exception as exc:
+            return Response({"error": f"Error fetching session: {str(exc)}"}, status=500)
+        
+        # Check permissions
+        if hasattr(request.user, 'role') and request.user.role:
+            role_name = request.user.role.name if hasattr(request.user.role, 'name') else str(request.user.role)
+            if role_name not in ['Admin', 'Superadmin']:
+                if not (session.staff == request.user or session.client == request.user):
+                    return Response({"error": "Permission denied."}, status=403)
+        
+        # Get treatment_plan_id from related scheduler session (backend automatically retrieves it)
+        treatment_plan_id = None
+        try:
+            from scheduler.models import Session as SchedulerSession
+            scheduler_session = SchedulerSession.objects.filter(
+                client=session.client,
+                staff=session.staff,
+                session_date=session.session_date,
+                start_time=session.start_time,
+                end_time=session.end_time
+            ).first()
+            
+            if scheduler_session and scheduler_session.treatment_plan:
+                treatment_plan_id = scheduler_session.treatment_plan.id
+        except Exception:
+            pass
+        
+        # If no treatment plan found, return error
+        if not treatment_plan_id:
+            return Response({
+                "error": "Treatment plan not found for this session.",
+                "message": "Please ensure the session is linked to a treatment plan.",
+                "session_id": session_id
+            }, status=404)
+        
         # Fetch the TreatmentPlan from the database
         try:
             treatment_plan = TreatmentPlan.objects.get(pk=treatment_plan_id)
@@ -3384,6 +3464,8 @@ class AISuggestionView(APIView):
 
         return Response({
             'treatment_plan': treatment_details,
+            'treatment_plan_id': treatment_plan_id,  # Automatically retrieved from backend
+            'session_id': session_id,  # Include session_id for reference
             'ai_suggestion': suggestion
         }, status=200)
 @api_view(['GET'])

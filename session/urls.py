@@ -55,7 +55,7 @@ urlpatterns = [
     path('time-trackers/<int:pk>/', views.TimeTrackerDetailView.as_view(), name='time-tracker-detail'),
     path('time-trackers/summary/', views.time_tracker_summary, name='time-tracker-summary'),
 
-    # AI suggestion question endpoint
-    path('ai-suggestions/<int:treatment_plan_id>/', views.AISuggestionView.as_view(), name='ai-suggestions'),
+    # AI suggestion question endpoint (automatically gets treatment_plan_id from session)
+    path('sessions/<int:session_id>/ai-suggestions/', views.AISuggestionView.as_view(), name='ai-suggestions'),
     path('bcba-client-sessions/', views.bcba_client_sessions, name='bcba-client-sessions'),
 ]
