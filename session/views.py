@@ -3433,6 +3433,9 @@ class AISuggestionView(APIView):
         treatment_plan_id = None
         try:
             from scheduler.models import Session as SchedulerSession
+            from treatment_plan.models import TreatmentPlan
+            
+            # First try: Find exact matching scheduler session
             scheduler_session = SchedulerSession.objects.filter(
                 client=session.client,
                 staff=session.staff,
@@ -3443,15 +3446,81 @@ class AISuggestionView(APIView):
             
             if scheduler_session and scheduler_session.treatment_plan:
                 treatment_plan_id = scheduler_session.treatment_plan.id
-        except Exception:
+            
+            # Second try: Find scheduler session with same client and date (more flexible)
+            if not treatment_plan_id:
+                scheduler_session = SchedulerSession.objects.filter(
+                    client=session.client,
+                    session_date=session.session_date
+                ).select_related('treatment_plan').first()
+                
+                if scheduler_session and scheduler_session.treatment_plan:
+                    treatment_plan_id = scheduler_session.treatment_plan.id
+            
+            # Third try: Find most recent treatment plan for the client
+            if not treatment_plan_id:
+                # Try to match by client_id or client_name
+                client_identifier = str(session.client.id)
+                treatment_plan = TreatmentPlan.objects.filter(
+                    models.Q(client_id=client_identifier) |
+                    models.Q(client_id=session.client.username) |
+                    models.Q(client_id=getattr(session.client, 'staff_id', '')) |
+                    models.Q(client_name__icontains=session.client.name if hasattr(session.client, 'name') and session.client.name else '')
+                ).order_by('-created_at').first()
+                
+                if treatment_plan:
+                    treatment_plan_id = treatment_plan.id
+            
+            # Fourth try: Get treatment plan from client's assigned BCBA if user is the BCBA
+            if not treatment_plan_id and hasattr(session.client, 'assigned_bcba') and session.client.assigned_bcba:
+                treatment_plan = TreatmentPlan.objects.filter(
+                    bcba=session.client.assigned_bcba,
+                    client_id__in=[str(session.client.id), session.client.username, getattr(session.client, 'staff_id', '')]
+                ).order_by('-created_at').first()
+                
+                if treatment_plan:
+                    treatment_plan_id = treatment_plan.id
+            
+            # Fifth try: If logged-in user is BCBA, get their treatment plan for this client
+            if not treatment_plan_id:
+                user_role = None
+                if hasattr(request.user, 'role') and request.user.role:
+                    user_role = request.user.role.name if hasattr(request.user.role, 'name') else str(request.user.role)
+                
+                if user_role == 'BCBA':
+                    # Get the most recent treatment plan created by this BCBA for this client
+                    treatment_plan = TreatmentPlan.objects.filter(
+                        bcba=request.user
+                    ).filter(
+                        models.Q(client_id=str(session.client.id)) |
+                        models.Q(client_id=session.client.username) |
+                        models.Q(client_id=getattr(session.client, 'staff_id', '')) |
+                        models.Q(client_name__icontains=session.client.name if hasattr(session.client, 'name') and session.client.name else session.client.get_full_name() or session.client.username or '')
+                    ).order_by('-created_at').first()
+                    
+                    if treatment_plan:
+                        treatment_plan_id = treatment_plan.id
+                    
+        except Exception as e:
+            # Log the error but continue to try other methods
             pass
         
-        # If no treatment plan found, return error
+        # If no treatment plan found, return error with helpful message
         if not treatment_plan_id:
+            # Get client info for better error message
+            client_info = {
+                "id": session.client.id if session.client else None,
+                "name": session.client.name if hasattr(session.client, 'name') and session.client.name else (session.client.get_full_name() or session.client.username) if session.client else None,
+                "username": session.client.username if session.client else None,
+                "staff_id": getattr(session.client, 'staff_id', None) if session.client else None
+            }
+            
             return Response({
                 "error": "Treatment plan not found for this session.",
-                "message": "Please ensure the session is linked to a treatment plan.",
-                "session_id": session_id
+                "message": "Please ensure the session is linked to a treatment plan. The system tried multiple methods to find a treatment plan but could not locate one for this client.",
+                "session_id": session_id,
+                "client": client_info,
+                "suggestion": "You may need to: 1) Create a treatment plan for this client, 2) Ensure the scheduler session has a treatment_plan_id assigned, or 3) Link an existing treatment plan to the session."
             }, status=404)
         
         # Fetch the TreatmentPlan from the database
