@@ -1,5 +1,8 @@
 from django.urls import path
-from .views import ClientListView, ClientDetailView, SessionListCreateView, SessionDetailView, RBTListView, BCBAListView, StaffListView
+from .views import (
+    ClientListView, ClientDetailView, SessionListCreateView, SessionDetailView, 
+    RBTListView, BCBAListView, StaffListView, get_client_from_treatment_plan
+)
 
 urlpatterns = [
     # Clients
@@ -12,4 +15,7 @@ urlpatterns = [
     # Sessions
     path('sessions/', SessionListCreateView.as_view(), name='sessions-list-create'),
     path('sessions/<int:pk>/', SessionDetailView.as_view(), name='sessions-detail'),
+    
+    # Treatment Plan Helper
+    path('treatment-plans/<int:treatment_plan_id>/client/', get_client_from_treatment_plan, name='get-client-from-treatment-plan'),
 ]

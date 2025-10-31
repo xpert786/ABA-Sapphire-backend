@@ -1,0 +1,537 @@
+{
+	"info": {
+		"_postman_id": "scheduler-sessions-treatment-plan",
+		"name": "Scheduler Sessions API - Treatment Plan Integration",
+		"description": "Complete Postman collection for testing Session API with Treatment Plan ID support. The new feature automatically selects the client based on treatment_plan_id.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Sessions",
+			"item": [
+				{
+					"name": "Create Session with Treatment Plan ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"pm.test(\"Response has session data\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('id');",
+									"    pm.expect(jsonData).to.have.property('client');",
+									"    pm.expect(jsonData).to.have.property('treatment_plan');",
+									"});",
+									"",
+									"pm.test(\"Client is automatically selected\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData.client).to.not.be.null;",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"treatment_plan_id\": 1,\n    \"session_date\": \"2025-01-20\",\n    \"start_time\": \"10:00:00\",\n    \"end_time\": \"11:00:00\",\n    \"staff\": 2,\n    \"session_notes\": \"Initial session with treatment plan integration\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"scheduler",
+								"sessions",
+								""
+							]
+						},
+						"description": "Create a new session by providing treatment_plan_id. The client will be automatically selected based on the treatment plan's client_id/client_name. This is the NEW feature - no need to manually specify the client!"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Session without Treatment Plan (Manual)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 201\", function () {",
+									"    pm.response.to.have.status(201);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client\": 3,\n    \"session_date\": \"2025-01-21\",\n    \"start_time\": \"14:00:00\",\n    \"end_time\": \"15:00:00\",\n    \"staff\": 2,\n    \"session_notes\": \"Manual session creation without treatment plan\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"scheduler",
+								"sessions",
+								""
+							]
+						},
+						"description": "Create a session manually by specifying the client directly (old method, still supported)"
+					},
+					"response": []
+				},
+				{
+					"name": "List All Sessions",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response is an array\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.be.an('array');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"scheduler",
+								"sessions",
+								""
+							]
+						},
+						"description": "Get all sessions for the logged-in user (staff). Only returns upcoming sessions (including today)."
+					},
+					"response": []
+				},
+				{
+					"name": "List Sessions by Treatment Plan ID",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"All sessions belong to treatment plan\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    if (jsonData.length > 0) {",
+									"        jsonData.forEach(function(session) {",
+									"            pm.expect(session.treatment_plan).to.equal(parseInt(pm.environment.get('treatment_plan_id')));",
+									"        });",
+									"    }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/?treatment_plan_id=1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"scheduler",
+								"sessions",
+								""
+							],
+							"query": [
+								{
+									"key": "treatment_plan_id",
+									"value": "1",
+									"description": "Filter sessions by treatment plan ID (NEW FEATURE)"
+								}
+							]
+						},
+						"description": "Get all sessions filtered by treatment_plan_id. This is a NEW query parameter that allows you to filter sessions for a specific treatment plan."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Session Detail",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Session has all required fields\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('id');",
+									"    pm.expect(jsonData).to.have.property('client');",
+									"    pm.expect(jsonData).to.have.property('staff');",
+									"    pm.expect(jsonData).to.have.property('session_date');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/{{session_id}}/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"scheduler",
+								"sessions",
+								"{{session_id}}",
+								""
+							]
+						},
+						"description": "Get detailed information about a specific session"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Session",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"session_notes\": \"Updated session notes\",\n    \"start_time\": \"10:30:00\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/{{session_id}}/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"scheduler",
+								"sessions",
+								"{{session_id}}",
+								""
+							]
+						},
+						"description": "Update an existing session (partial update using PATCH)"
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Session",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 204\", function () {",
+									"    pm.response.to.have.status(204);",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/{{session_id}}/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"scheduler",
+								"sessions",
+								"{{session_id}}",
+								""
+							]
+						},
+						"description": "Delete a session"
+					},
+					"response": []
+				}
+			],
+			"description": "Session management endpoints with treatment plan integration"
+		},
+		{
+			"name": "Treatment Plans",
+			"item": [
+				{
+					"name": "List Treatment Plans",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/treatment-plans/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"treatment-plan",
+								"treatment-plans",
+								""
+							]
+						},
+						"description": "Get list of treatment plans to use their IDs when creating sessions"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Treatment Plan Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/treatment-plans/{{treatment_plan_id}}/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"treatment-plan",
+								"treatment-plans",
+								"{{treatment_plan_id}}",
+								""
+							]
+						},
+						"description": "Get details of a specific treatment plan to verify client_id and client_name"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Client ID from Treatment Plan (NEW!)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test(\"Status code is 200\", function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"pm.test(\"Response has client information\", function () {",
+									"    var jsonData = pm.response.json();",
+									"    pm.expect(jsonData).to.have.property('matched_client');",
+									"    if (jsonData.matched_client) {",
+									"        pm.expect(jsonData.matched_client).to.have.property('id');",
+									"        pm.environment.set('client_id', jsonData.matched_client.id);",
+									"    }",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/treatment-plans/{{treatment_plan_id}}/client/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"sapphire",
+								"scheduler",
+								"treatment-plans",
+								"{{treatment_plan_id}}",
+								"client",
+								""
+							]
+						},
+						"description": "Get the client ID and information that will be automatically selected when creating a session with this treatment_plan_id. This is the ANSWER to your question: 'How to know client ID when I select treatment plan?'"
+					},
+					"response": []
+				}
+			],
+			"description": "Treatment plan endpoints including helper to get client ID"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "YOUR_JWT_TOKEN_HERE",
+			"type": "string"
+		},
+		{
+			"key": "session_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "treatment_plan_id",
+			"value": "1",
+			"type": "string"
+		}
+	]
+}
+
