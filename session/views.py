@@ -1188,62 +1188,13 @@ def get_bcba_clients(request):
                 # Admin can see all clients, or debug mode shows all clients
                 clients = User.objects.filter(
                     role__name__in=['Clients/Parent', 'Client']
-                ).select_related('role').order_by('first_name', 'last_name')
+                ).select_related('role', 'assigned_bcba').order_by('first_name', 'last_name')
             else:
-                # BCBA can see clients assigned to them
-                # First try to get clients assigned via supervisor field
+                # BCBA can ONLY see clients assigned to them via assigned_bcba field
                 clients = User.objects.filter(
-                    supervisor=user,
+                    assigned_bcba=user,
                     role__name__in=['Clients/Parent', 'Client']
-                ).select_related('role').order_by('first_name', 'last_name')
-                
-                # Debug: Check if supervisor field exists and has clients
-                supervisor_clients_count = clients.count()
-                
-                # If no clients found via supervisor field, fall back to session history
-                if not clients.exists():
-                    client_ids = Session.objects.filter(staff=user).values_list('client_id', flat=True).distinct()
-                    clients = User.objects.filter(
-                        id__in=client_ids,
-                        role__name__in=['Clients/Parent', 'Client']
-                    ).select_related('role').order_by('first_name', 'last_name')
-                    
-                    # Debug: Check session-based clients
-                    session_clients_count = clients.count()
-                    
-                    # If still no clients, try broader search for any clients
-                    if not clients.exists():
-                        # Try to find any clients with the role, regardless of assignment
-                        all_clients = User.objects.filter(
-                            role__name__in=['Clients/Parent', 'Client']
-                        ).select_related('role').order_by('first_name', 'last_name')
-                        
-                        # For debugging, let's see what clients exist
-                        debug_info = {
-                            'supervisor_clients_count': supervisor_clients_count,
-                            'session_clients_count': session_clients_count,
-                            'total_clients_with_role': all_clients.count(),
-                            'user_id': user.id,
-                            'user_role': user.role.name if hasattr(user, 'role') and user.role else 'No role'
-                        }
-                        
-                        # Return debug info if no clients found
-                        if not all_clients.exists():
-                            return Response({
-                                'bcba': {
-                                    'id': int(user.id),
-                                    'username': str(user.username),
-                                    'name': user.get_full_name() or user.username,
-                                    'role': user.role.name if hasattr(user, 'role') and user.role else 'No role'
-                                },
-                                'clients': [],
-                                'total_clients': 0,
-                                'debug_info': debug_info,
-                                'message': 'No clients found. Check if clients exist and have proper role assignments.'
-                            })
-                        else:
-                            # Use all clients as fallback for debugging
-                            clients = all_clients
+                ).select_related('role', 'assigned_bcba').order_by('first_name', 'last_name')
         else:
             clients = User.objects.none()
         
@@ -1251,70 +1202,40 @@ def get_bcba_clients(request):
         client_list = []
         for client in clients:
             # Get session statistics for this client
-            # Use the assigned BCBA relationship for more accurate data
-            if hasattr(client, 'supervisor') and client.supervisor == user:
-                # Client is directly assigned to this BCBA
-                total_sessions = Session.objects.filter(client=client, staff=user).count()
-                completed_sessions = Session.objects.filter(
-                    client=client, 
-                    staff=user, 
-                    status='completed'
-                ).count()
-                
-                # Get recent sessions (last 30 days)
-                from datetime import timedelta
-                recent_date = timezone.now().date() - timedelta(days=30)
-                recent_sessions = Session.objects.filter(
-                    client=client,
-                    staff=user,
-                    session_date__gte=recent_date
-                ).count()
-                
-                # Get upcoming sessions
-                upcoming_sessions = Session.objects.filter(
-                    client=client,
-                    staff=user,
-                    session_date__gte=timezone.now().date(),
-                    status__in=['scheduled', 'in_progress']
-                ).count()
-                
-                # Get last session date
-                last_session = Session.objects.filter(
-                    client=client,
-                    staff=user
-                ).order_by('-session_date').first()
-            else:
-                # Fallback to session-based statistics
-                total_sessions = Session.objects.filter(client=client, staff=user).count()
-                completed_sessions = Session.objects.filter(
-                    client=client, 
-                    staff=user, 
-                    status='completed'
-                ).count()
-                
-                from datetime import timedelta
-                recent_date = timezone.now().date() - timedelta(days=30)
-                recent_sessions = Session.objects.filter(
-                    client=client,
-                    staff=user,
-                    session_date__gte=recent_date
-                ).count()
-                
-                upcoming_sessions = Session.objects.filter(
-                    client=client,
-                    staff=user,
-                    session_date__gte=timezone.now().date(),
-                    status__in=['scheduled', 'in_progress']
-                ).count()
-                
-                last_session = Session.objects.filter(
-                    client=client,
-                    staff=user
-                ).order_by('-session_date').first()
+            # Only count sessions where this BCBA is the staff
+            total_sessions = Session.objects.filter(client=client, staff=user).count()
+            completed_sessions = Session.objects.filter(
+                client=client, 
+                staff=user, 
+                status='completed'
+            ).count()
             
-            # Check assignment status
-            is_directly_assigned = hasattr(client, 'supervisor') and client.supervisor == user
-            assignment_status = "directly_assigned" if is_directly_assigned else "session_based"
+            # Get recent sessions (last 30 days)
+            from datetime import timedelta
+            recent_date = timezone.now().date() - timedelta(days=30)
+            recent_sessions = Session.objects.filter(
+                client=client,
+                staff=user,
+                session_date__gte=recent_date
+            ).count()
+            
+            # Get upcoming sessions
+            upcoming_sessions = Session.objects.filter(
+                client=client,
+                staff=user,
+                session_date__gte=timezone.now().date(),
+                status__in=['scheduled', 'in_progress']
+            ).count()
+            
+            # Get last session date
+            last_session = Session.objects.filter(
+                client=client,
+                staff=user
+            ).order_by('-session_date').first()
+            
+            # Check assignment status - client must be assigned to this BCBA
+            is_directly_assigned = hasattr(client, 'assigned_bcba') and client.assigned_bcba == user
+            assignment_status = "assigned_to_bcba"
             
             client_info = {
                 'id': int(client.id),
@@ -1349,10 +1270,10 @@ def get_bcba_clients(request):
             'bcba_id': user.id,
             'bcba_role': user.role.name if hasattr(user, 'role') and user.role else 'No role',
             'clients_found': len(client_list),
-            'supervisor_field_exists': hasattr(User.objects.first(), 'supervisor') if User.objects.exists() else False,
+            'assigned_bcba_field_exists': hasattr(User.objects.first(), 'assigned_bcba') if User.objects.exists() else False,
             'debug_mode': debug_mode,
-            'all_users_count': User.objects.count(),
-            'clients_with_role_count': User.objects.filter(role__name__in=['Clients/Parent', 'Client']).count(),
+            'total_clients_with_role': User.objects.filter(role__name__in=['Clients/Parent', 'Client']).count(),
+            'clients_assigned_to_this_bcba': User.objects.filter(assigned_bcba=user, role__name__in=['Clients/Parent', 'Client']).count(),
             'sessions_with_bcba_count': Session.objects.filter(staff=user).count()
         }
         
