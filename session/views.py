@@ -2491,7 +2491,7 @@ def save_session_data_and_generate_notes(request, session_id):
         for activity_data in request_data['activities']:
             activity = Activity.objects.create(
                 session=session,
-                activity_name=activity_data.get('name', ''),
+                activity_name=(activity_data.get('name', '') or '')[:255],  # Truncate to max_length
                 duration_minutes=activity_data.get('duration', 0),
                 reinforcement_strategies=activity_data.get('description', ''),
                 notes=activity_data.get('response', '')
@@ -2530,9 +2530,10 @@ def save_session_data_and_generate_notes(request, session_id):
     if 'reinforcement_strategies' in request_data:
         strategies_saved = []
         for strategy_data in request_data['reinforcement_strategies']:
+            strategy_type = (strategy_data.get('type', '') or '')[:255]  # Truncate to max_length
             strategy = ReinforcementStrategy.objects.create(
                 session=session,
-                strategy_type=strategy_data.get('type', ''),
+                strategy_type=strategy_type,
                 frequency=strategy_data.get('effectiveness', 5),
                 pr_ratio=strategy_data.get('effectiveness', 5),
                 notes=strategy_data.get('description', '') + ' ' + strategy_data.get('notes', '')
@@ -2572,9 +2573,11 @@ def save_session_data_and_generate_notes(request, session_id):
         if isinstance(pre_session_data, list):
             for item_key in pre_session_data:
                 if item_key in item_name_map:
+                    # Ensure item_name doesn't exceed max_length
+                    item_name = item_name_map[item_key][:255]
                     PreSessionChecklist.objects.create(
                         session=session,
-                        item_name=item_name_map[item_key],
+                        item_name=item_name,
                         is_completed=True,
                         notes=''
                     )
@@ -2595,9 +2598,11 @@ def save_session_data_and_generate_notes(request, session_id):
                     
                     # Only save if the item is completed
                     if is_completed:
+                        # Ensure item_name doesn't exceed max_length
+                        item_name = item_name_map[item_key][:255]
                         PreSessionChecklist.objects.create(
                             session=session,
-                            item_name=item_name_map[item_key],
+                            item_name=item_name,
                             is_completed=True,
                             notes=notes
                         )

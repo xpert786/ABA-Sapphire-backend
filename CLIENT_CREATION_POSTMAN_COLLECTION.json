@@ -1,0 +1,414 @@
+{
+	"info": {
+		"_postman_id": "client-creation-docs-001",
+		"name": "Client Creation with Document Uploads",
+		"description": "Postman collection for creating clients (Clients/Parent role) with document uploads by Admin users",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{access_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"item": [
+		{
+			"name": "1. Login (Get Access Token)",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"if (pm.response.code === 200) {",
+							"    var jsonData = pm.response.json();",
+							"    pm.environment.set('access_token', jsonData.access);",
+							"    pm.environment.set('refresh_token', jsonData.refresh);",
+							"}"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"username\": \"admin\",\n    \"password\": \"admin123\"\n}"
+				},
+				"url": {
+					"raw": "{{base_url}}/sapphire/api/login/",
+					"host": ["{{base_url}}"],
+					"path": ["sapphire", "api", "login", ""]
+				},
+				"description": "Login to get access token. Replace username and password with your admin credentials."
+			},
+			"response": []
+		},
+		{
+			"name": "2. Create Client with All Documents",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "username",
+							"value": "client001",
+							"type": "text",
+							"description": "Unique username (letters and numbers only)"
+						},
+						{
+							"key": "email",
+							"value": "client001@example.com",
+							"type": "text"
+						},
+						{
+							"key": "name",
+							"value": "John Doe",
+							"type": "text"
+						},
+						{
+							"key": "password",
+							"value": "SecurePass123!",
+							"type": "text",
+							"description": "Must meet password validation requirements"
+						},
+						{
+							"key": "phone",
+							"value": "+15551234567",
+							"type": "text"
+						},
+						{
+							"key": "role",
+							"value": "3",
+							"type": "text",
+							"description": "Role ID for 'Clients/Parent' role. Get this from your database."
+						},
+						{
+							"key": "dob",
+							"value": "2015-05-15",
+							"type": "text",
+							"description": "Date of birth (YYYY-MM-DD)"
+						},
+						{
+							"key": "gender",
+							"value": "Male",
+							"type": "text"
+						},
+						{
+							"key": "primary_diagnosis",
+							"value": "Autism Spectrum Disorder",
+							"type": "text"
+						},
+						{
+							"key": "secondary_diagnosis",
+							"value": "ADHD",
+							"type": "text"
+						},
+						{
+							"key": "staff_id",
+							"value": "CL-001",
+							"type": "text"
+						},
+						{
+							"key": "street",
+							"value": "123 Main Street",
+							"type": "text"
+						},
+						{
+							"key": "city",
+							"value": "Aurora",
+							"type": "text"
+						},
+						{
+							"key": "state",
+							"value": "CO",
+							"type": "text"
+						},
+						{
+							"key": "zip_code",
+							"value": "80016",
+							"type": "text"
+						},
+						{
+							"key": "country",
+							"value": "USA",
+							"type": "text"
+						},
+						{
+							"key": "parent_name",
+							"value": "Jane Doe",
+							"type": "text"
+						},
+						{
+							"key": "parent_relationship",
+							"value": "Mother",
+							"type": "text"
+						},
+						{
+							"key": "parent_phone",
+							"value": "+15557654321",
+							"type": "text"
+						},
+						{
+							"key": "parent_email",
+							"value": "jane.doe@example.com",
+							"type": "text"
+						},
+						{
+							"key": "prefered_contact_method",
+							"value": "Email",
+							"type": "text"
+						},
+						{
+							"key": "assigned_bcba",
+							"value": "2",
+							"type": "text",
+							"description": "BCBA user ID (optional)"
+						},
+						{
+							"key": "assigned_rbt",
+							"value": "4",
+							"type": "text",
+							"description": "RBT user ID (optional)"
+						},
+						{
+							"key": "preferred_session_time",
+							"value": "Morning",
+							"type": "text"
+						},
+						{
+							"key": "preferred_session_duration",
+							"value": "60",
+							"type": "text",
+							"description": "Duration in minutes"
+						},
+						{
+							"key": "service_location",
+							"value": "In-Person",
+							"type": "text"
+						},
+						{
+							"key": "preferred_session_telehealth",
+							"value": "false",
+							"type": "text"
+						},
+						{
+							"key": "primary_physician",
+							"value": "Dr. Smith",
+							"type": "text"
+						},
+						{
+							"key": "emergency_phone_number",
+							"value": "+15559998877",
+							"type": "text"
+						},
+						{
+							"key": "allergies",
+							"value": "Peanuts, Latex",
+							"type": "text"
+						},
+						{
+							"key": "medication",
+							"value": "Prescription medication list",
+							"type": "text"
+						},
+						{
+							"key": "special_considerations",
+							"value": "Non-verbal, uses communication device",
+							"type": "text"
+						},
+						{
+							"key": "consent_for_treatment",
+							"type": "file",
+							"src": [],
+							"description": "Upload consent for treatment document (PDF, image, etc.)"
+						},
+						{
+							"key": "hippa_authorization",
+							"type": "file",
+							"src": [],
+							"description": "Upload HIPAA authorization document"
+						},
+						{
+							"key": "insurance_card",
+							"type": "file",
+							"src": [],
+							"description": "Upload insurance card (front and back images or PDF)"
+						},
+						{
+							"key": "physician_referral",
+							"type": "file",
+							"src": [],
+							"description": "Upload physician referral document"
+						},
+						{
+							"key": "previous_assessment",
+							"type": "file",
+							"src": [],
+							"description": "Upload previous assessment report"
+						},
+						{
+							"key": "iep",
+							"type": "file",
+							"src": [],
+							"description": "Upload IEP (Individualized Education Program) document"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/sapphire/api/register/",
+					"host": ["{{base_url}}"],
+					"path": ["sapphire", "api", "register", ""]
+				},
+				"description": "Create a new client with all document uploads. All document fields are optional. Use form-data to upload files."
+			},
+			"response": []
+		},
+		{
+			"name": "3. Create Client with Minimal Documents",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "username",
+							"value": "client002",
+							"type": "text"
+						},
+						{
+							"key": "email",
+							"value": "client002@example.com",
+							"type": "text"
+						},
+						{
+							"key": "name",
+							"value": "Sarah Johnson",
+							"type": "text"
+						},
+						{
+							"key": "password",
+							"value": "SecurePass123!",
+							"type": "text"
+						},
+						{
+							"key": "phone",
+							"value": "+15551234568",
+							"type": "text"
+						},
+						{
+							"key": "role",
+							"value": "3",
+							"type": "text",
+							"description": "Role ID for 'Clients/Parent' role"
+						},
+						{
+							"key": "consent_for_treatment",
+							"type": "file",
+							"src": [],
+							"description": "Only required document"
+						},
+						{
+							"key": "insurance_card",
+							"type": "file",
+							"src": [],
+							"description": "Insurance card upload"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/sapphire/api/register/",
+					"host": ["{{base_url}}"],
+					"path": ["sapphire", "api", "register", ""]
+				},
+				"description": "Create a client with minimal required fields and only essential documents."
+			},
+			"response": []
+		},
+		{
+			"name": "4. Update Client Documents",
+			"request": {
+				"method": "PUT",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "hippa_authorization",
+							"type": "file",
+							"src": [],
+							"description": "Upload or update HIPAA authorization"
+						},
+						{
+							"key": "physician_referral",
+							"type": "file",
+							"src": [],
+							"description": "Upload or update physician referral"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/sapphire/api/users/:id/edit/",
+					"host": ["{{base_url}}"],
+					"path": ["sapphire", "api", "users", ":id", "edit", ""],
+					"variable": [
+						{
+							"key": "id",
+							"value": "1",
+							"description": "Client user ID"
+						}
+					]
+				},
+				"description": "Update client documents. You can update individual documents without affecting others."
+			},
+			"response": []
+		},
+		{
+			"name": "5. Get Client Details (View Documents)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/sapphire/api/users/:id/",
+					"host": ["{{base_url}}"],
+					"path": ["sapphire", "api", "users", ":id", ""],
+					"variable": [
+						{
+							"key": "id",
+							"value": "1",
+							"description": "Client user ID"
+						}
+					]
+				},
+				"description": "Get client details including document URLs. Document fields will contain file paths/URLs if uploaded."
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://168.231.121.7",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
+
