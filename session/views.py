@@ -2555,39 +2555,42 @@ def save_session_data_and_generate_notes(request, session_id):
             incidents_saved.append(incident.id)
         saved_data['incidents'] = f"{len(incidents_saved)} incidents saved"
     
-    # Save checklist items
-    if 'checklist' in request_data:
-        checklist_data = request_data['checklist']
+    # Save pre-session checklist items
+    if 'pre_session' in request_data:
+        pre_session_data = request_data['pre_session']
         checklist_saved = []
         
-        if checklist_data.get('materials_ready'):
-            PreSessionChecklist.objects.create(
-                session=session,
-                item_name='Materials Ready',
-                is_completed=True,
-                notes=checklist_data.get('notes', '')
-            )
-            checklist_saved.append('materials_ready')
+        # Map item keys to proper display names
+        item_name_map = {
+            'materials_prepared': 'Materials Prepared',
+            'treatment_plan_reviewed': 'Treatment Plan Reviewed',
+            'environment_setup': 'Environment Setup Complete',
+            'data_collection_sheets': 'Data Collection Sheets Ready',
+        }
         
-        if checklist_data.get('environment_prepared'):
-            PreSessionChecklist.objects.create(
-                session=session,
-                item_name='Environment Prepared',
-                is_completed=True,
-                notes=''
-            )
-            checklist_saved.append('environment_prepared')
+        # Process each checklist item
+        for item_key, item_value in pre_session_data.items():
+            if item_key in item_name_map:
+                # Handle both object format {is_completed: true, notes: "..."} and simple boolean
+                if isinstance(item_value, dict):
+                    is_completed = item_value.get('is_completed', False)
+                    notes = item_value.get('notes', '')
+                else:
+                    # Legacy: if it's just a boolean, use that as is_completed
+                    is_completed = bool(item_value)
+                    notes = ''
+                
+                # Only save if the item is completed
+                if is_completed:
+                    PreSessionChecklist.objects.create(
+                        session=session,
+                        item_name=item_name_map[item_key],
+                        is_completed=True,
+                        notes=notes
+                    )
+                    checklist_saved.append(item_key)
         
-        if checklist_data.get('reviewed_goals'):
-            PreSessionChecklist.objects.create(
-                session=session,
-                item_name='Goals Reviewed',
-                is_completed=True,
-                notes=''
-            )
-            checklist_saved.append('reviewed_goals')
-        
-        saved_data['checklist'] = f"{len(checklist_saved)} checklist items saved"
+        saved_data['pre_session'] = f"{len(checklist_saved)} checklist items saved"
     
     # Now generate AI notes using the saved data
     try:
