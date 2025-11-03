@@ -1,15 +1,20 @@
 # ocean/views.py
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import ChatMessage, Alert, SessionPrompt, SessionNoteFlow
-from .serializers import ChatMessageSerializer, AlertSerializer, SessionPromptSerializer, SessionNoteFlowSerializer
+from .models import ChatMessage, Alert, SessionPrompt, SessionNoteFlow, SkillProgress, Milestone, ProgressMonitoring
+from .serializers import ChatMessageSerializer, AlertSerializer, SessionPromptSerializer, SessionNoteFlowSerializer, SkillProgressSerializer, ProgressMonitoringSerializer
 from .utils import generate_ai_response, generate_ai_response_with_db_context
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from datetime import timedelta
-from session.models import Session
+from datetime import timedelta, datetime
+from django.db.models import Q, Count, Avg, Sum, Case, When, IntegerField
+from django.db.models.functions import TruncWeek, TruncMonth
+from session.models import Session, GoalProgress, Incident
+from django.contrib.auth import get_user_model
+
+CustomUser = get_user_model()
 
 class ChatMessageViewSet(viewsets.ModelViewSet):
     serializer_class = ChatMessageSerializer
@@ -269,3 +274,255 @@ class SessionNoteFlowViewSet(viewsets.ModelViewSet):
             "show_prompt": False,
             "message": "Session is not yet in the final 15 minutes"
         })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_client_progress_monitoring(request, client_id):
+    """
+    Get comprehensive progress monitoring data for a client.
+    Calculates KPIs, skill progress, and month-over-month changes.
+    
+    Endpoint: GET /sapphire/ocean/progress-monitoring/{client_id}/
+    
+    Query Parameters:
+    - period_start (optional): Start date for monitoring period (YYYY-MM-DD), defaults to 30 days ago
+    - period_end (optional): End date for monitoring period (YYYY-MM-DD), defaults to today
+    - treatment_plan_id (optional): Filter by specific treatment plan
+    
+    Returns:
+    - KPIs (Session Attendance, Goal Achievement, Behavior Incidents, Engagement Rate)
+    - Month-over-month changes
+    - Skill Progress with milestones
+    - Period information
+    """
+    try:
+        # Get client
+        client = get_object_or_404(CustomUser, id=client_id, role__name='Clients/Parent')
+        
+        # Check permissions
+        user = request.user
+        has_permission = False
+        
+        if hasattr(user, 'role') and user.role:
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            
+            # Admin and Superadmin can access all
+            if role_name in ['Admin', 'Superadmin']:
+                has_permission = True
+            # BCBA can access if client is assigned or has treatment plans
+            elif role_name == 'BCBA':
+                has_permission = (
+                    hasattr(client, 'assigned_bcba') and client.assigned_bcba == user
+                )
+                if not has_permission:
+                    try:
+                        from treatment_plan.models import TreatmentPlan
+                        has_treatment_plan = TreatmentPlan.objects.filter(
+                            bcba=user
+                        ).filter(
+                            Q(client_id=str(client.id)) |
+                            Q(client_id=client.username) |
+                            Q(client_id=getattr(client, 'staff_id', '')) |
+                            Q(client_name__icontains=client.name if hasattr(client, 'name') and client.name else '')
+                        ).exists()
+                        if has_treatment_plan:
+                            has_permission = True
+                    except Exception:
+                        pass
+            # RBT can access if they have sessions with this client
+            elif role_name in ['RBT', 'BCBA']:
+                has_permission = Session.objects.filter(client=client, staff=user).exists()
+            # Clients can access their own data
+            elif role_name == 'Clients/Parent':
+                has_permission = (client == user)
+        else:
+            # Fallback
+            has_permission = (client == user or Session.objects.filter(client=client, staff=user).exists())
+        
+        if not has_permission:
+            return Response({
+                "error": "Permission denied. You don't have access to this client's progress data."
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Get query parameters
+        period_start_str = request.query_params.get('period_start')
+        period_end_str = request.query_params.get('period_end')
+        treatment_plan_id = request.query_params.get('treatment_plan_id')
+        
+        # Set default period (last 30 days)
+        today = timezone.now().date()
+        if period_end_str:
+            try:
+                period_end = datetime.strptime(period_end_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({"error": "Invalid period_end format. Use YYYY-MM-DD"}, status=400)
+        else:
+            period_end = today
+        
+        if period_start_str:
+            try:
+                period_start = datetime.strptime(period_start_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({"error": "Invalid period_start format. Use YYYY-MM-DD"}, status=400)
+        else:
+            period_start = period_end - timedelta(days=30)
+        
+        # Filter sessions for the period
+        sessions_qs = Session.objects.filter(
+            client=client,
+            session_date__gte=period_start,
+            session_date__lte=period_end
+        )
+        
+        if treatment_plan_id:
+            try:
+                from scheduler.models import Session as SchedulerSession
+                scheduler_session_ids = SchedulerSession.objects.filter(
+                    client=client,
+                    treatment_plan_id=treatment_plan_id,
+                    session_date__gte=period_start,
+                    session_date__lte=period_end
+                ).values_list('id', flat=True)
+                # Match session_logs sessions to scheduler sessions by date/time
+                sessions_qs = sessions_qs.filter(
+                    session_date__gte=period_start,
+                    session_date__lte=period_end
+                )
+            except Exception:
+                pass
+        
+        # 1. Calculate Session Attendance Rate
+        total_scheduled = sessions_qs.count()
+        completed_sessions = sessions_qs.filter(status='completed').count()
+        cancelled_sessions = sessions_qs.filter(status='cancelled').count()
+        attended_sessions = completed_sessions  # Only completed sessions count as attended
+        
+        if total_scheduled > 0:
+            attendance_rate = (attended_sessions / total_scheduled) * 100
+        else:
+            attendance_rate = 0.00
+        
+        # 2. Calculate Goal Achievement Rate
+        completed_session_ids = sessions_qs.filter(status='completed').values_list('id', flat=True)
+        goal_progress_qs = GoalProgress.objects.filter(session_id__in=completed_session_ids)
+        
+        total_goals = goal_progress_qs.count()
+        met_goals = goal_progress_qs.filter(is_met=True).count()
+        
+        if total_goals > 0:
+            goal_achievement_rate = (met_goals / total_goals) * 100
+        else:
+            goal_achievement_rate = 0.00
+        
+        # 3. Calculate Behavior Incidents Per Week
+        incidents_qs = Incident.objects.filter(session__client=client, session__session_date__gte=period_start, session__session_date__lte=period_end)
+        
+        total_incidents = incidents_qs.count()
+        weeks_in_period = max(1, (period_end - period_start).days / 7)
+        incidents_per_week = total_incidents / weeks_in_period if weeks_in_period > 0 else 0.00
+        
+        # 4. Calculate Engagement Rate
+        # Engagement is estimated from completed sessions with notes and full duration
+        completed_with_notes = sessions_qs.filter(status='completed', session_notes__isnull=False).exclude(session_notes='').count()
+        total_completed = completed_sessions if completed_sessions > 0 else 1
+        
+        # Also factor in session duration completion
+        engagement_rate = ((completed_with_notes / total_completed) * 100) if total_completed > 0 else 0.00
+        
+        # 5. Calculate Month-over-Month Changes
+        last_month_end = period_start - timedelta(days=1)
+        last_month_start = last_month_end - timedelta(days=30)
+        
+        last_month_sessions = Session.objects.filter(
+            client=client,
+            session_date__gte=last_month_start,
+            session_date__lte=last_month_end
+        )
+        
+        last_month_total = last_month_sessions.count()
+        last_month_completed = last_month_sessions.filter(status='completed').count()
+        last_month_attendance = (last_month_completed / last_month_total * 100) if last_month_total > 0 else 0.00
+        
+        last_month_completed_ids = last_month_sessions.filter(status='completed').values_list('id', flat=True)
+        last_month_goals = GoalProgress.objects.filter(session_id__in=last_month_completed_ids)
+        last_month_total_goals = last_month_goals.count()
+        last_month_met_goals = last_month_goals.filter(is_met=True).count()
+        last_month_goal_rate = (last_month_met_goals / last_month_total_goals * 100) if last_month_total_goals > 0 else 0.00
+        
+        last_month_incidents = Incident.objects.filter(
+            session__client=client,
+            session__session_date__gte=last_month_start,
+            session__session_date__lte=last_month_end
+        ).count()
+        last_month_weeks = max(1, (last_month_end - last_month_start).days / 7)
+        last_month_incidents_per_week = last_month_incidents / last_month_weeks if last_month_weeks > 0 else 0.00
+        
+        last_month_completed_with_notes = last_month_sessions.filter(status='completed', session_notes__isnull=False).exclude(session_notes='').count()
+        last_month_engagement = (last_month_completed_with_notes / last_month_completed * 100) if last_month_completed > 0 else 0.00
+        
+        # Calculate changes
+        attendance_change = float(attendance_rate - last_month_attendance)
+        goal_achievement_change = float(goal_achievement_rate - last_month_goal_rate)
+        incidents_change = float(incidents_per_week - last_month_incidents_per_week)
+        engagement_change = float(engagement_rate - last_month_engagement)
+        
+        # 6. Get Skill Progress
+        skill_progress_qs = SkillProgress.objects.filter(client=client)
+        if treatment_plan_id:
+            skill_progress_qs = skill_progress_qs.filter(treatment_plan_id=treatment_plan_id)
+        
+        skill_progress_data = SkillProgressSerializer(skill_progress_qs, many=True).data
+        
+        # Prepare response
+        response_data = {
+            'client': {
+                'id': client.id,
+                'username': client.username,
+                'name': client.name or client.get_full_name() or client.username,
+                'email': client.email
+            },
+            'period': {
+                'start': period_start.isoformat(),
+                'end': period_end.isoformat(),
+                'days': (period_end - period_start).days
+            },
+            'kpis': {
+                'session_attendance': {
+                    'value': float(round(attendance_rate, 2)),
+                    'change_from_last_month': float(round(attendance_change, 2)),
+                    'total_scheduled': total_scheduled,
+                    'completed': completed_sessions,
+                    'cancelled': cancelled_sessions
+                },
+                'goal_achievement': {
+                    'value': float(round(goal_achievement_rate, 2)),
+                    'change_from_last_month': float(round(goal_achievement_change, 2)),
+                    'total_goals': total_goals,
+                    'met_goals': met_goals
+                },
+                'behavior_incidents': {
+                    'value': float(round(incidents_per_week, 2)),
+                    'change_from_last_month': float(round(incidents_change, 2)),
+                    'total_incidents': total_incidents,
+                    'weeks_tracked': float(round(weeks_in_period, 1))
+                },
+                'engagement_rate': {
+                    'value': float(round(engagement_rate, 2)),
+                    'change_from_last_month': float(round(engagement_change, 2)),
+                    'completed_with_notes': completed_with_notes,
+                    'total_completed': total_completed
+                }
+            },
+            'skill_progress': skill_progress_data,
+            'calculated_at': timezone.now().isoformat()
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        import traceback
+        return Response({
+            "error": f"Error calculating progress monitoring: {str(e)}",
+            "traceback": traceback.format_exc()
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

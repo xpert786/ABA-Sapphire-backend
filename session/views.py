@@ -100,8 +100,52 @@ class SessionDetailView(generics.RetrieveUpdateDestroyAPIView):
         if hasattr(user, 'role') and user.role:
             role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
             
-            if role_name in ['RBT', 'BCBA']:
+            if role_name == 'RBT':
+                # RBT can only see sessions they're assigned to
                 queryset = queryset.filter(staff=user)
+            elif role_name == 'BCBA':
+                # BCBA can see sessions where:
+                # 1. They are the staff
+                # 2. Client is assigned to them (assigned_bcba)
+                # 3. They have treatment plans for the client (using client_id matching)
+                from django.db.models import Q
+                from treatment_plan.models import TreatmentPlan
+                
+                # Get treatment plans for this BCBA
+                treatment_plans = TreatmentPlan.objects.filter(bcba=user)
+                
+                # Build Q objects for matching
+                q_objects = Q(staff=user) | Q(client__assigned_bcba=user)
+                
+                # Add treatment plan matching by client_id, username, or name
+                if treatment_plans.exists():
+                    q_treatment_plan = Q()
+                    for tp in treatment_plans:
+                        client_id_str = str(tp.client_id)
+                        # Match by numeric ID if possible
+                        if client_id_str.isdigit():
+                            try:
+                                q_treatment_plan |= Q(client__id=int(client_id_str))
+                            except (ValueError, TypeError):
+                                pass
+                        # Match by username
+                        q_treatment_plan |= Q(client__username=client_id_str)
+                        # Match by staff_id if exists on client model
+                        try:
+                            q_treatment_plan |= Q(client__staff_id=client_id_str)
+                        except Exception:
+                            pass
+                        # Match by name if exists
+                        if tp.client_name:
+                            try:
+                                from django.db.models import CharField
+                                # Try to match by name field
+                                q_treatment_plan |= Q(client__name__icontains=tp.client_name)
+                            except Exception:
+                                pass
+                    q_objects |= q_treatment_plan
+                
+                queryset = queryset.filter(q_objects).distinct()
             elif role_name == 'Clients/Parent':
                 queryset = queryset.filter(client=user)
                 
@@ -649,40 +693,62 @@ def get_session_details(request, session_id):
     
     # Check permissions
     user = request.user
+    has_permission = False
+    
     if hasattr(user, 'role') and user.role:
         role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
         
         if role_name in ['Admin', 'Superadmin']:
             # Admin can see any session
-            pass
-        elif role_name in ['RBT', 'BCBA']:
-            # RBT and BCBA can see sessions they're assigned to
-            if session.staff != user:
-                return Response(
-                    {'error': 'You can only view sessions assigned to you'}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
+            has_permission = True
+        elif role_name == 'RBT':
+            # RBT can only see sessions they're assigned to
+            has_permission = (session.staff == user)
+        elif role_name == 'BCBA':
+            # BCBA can see sessions if:
+            # 1. They are the staff for this session
+            # 2. The client is assigned to them (assigned_bcba)
+            # 3. They have treatment plans for this client
+            has_permission = (session.staff == user)
+            
+            if not has_permission:
+                # Check if client is assigned to BCBA
+                if hasattr(session.client, 'assigned_bcba') and session.client.assigned_bcba == user:
+                    has_permission = True
+            
+            if not has_permission:
+                # Check if BCBA has treatment plans for this client
+                try:
+                    from treatment_plan.models import TreatmentPlan
+                    from django.db.models import Q
+                    client_identifier = str(session.client.id)
+                    has_treatment_plan = TreatmentPlan.objects.filter(
+                        bcba=user
+                    ).filter(
+                        Q(client_id=client_identifier) |
+                        Q(client_id=session.client.username) |
+                        Q(client_id=getattr(session.client, 'staff_id', '')) |
+                        Q(client_name__icontains=session.client.name if hasattr(session.client, 'name') and session.client.name else '')
+                    ).exists()
+                    if has_treatment_plan:
+                        has_permission = True
+                except Exception:
+                    pass
         elif role_name == 'Clients/Parent':
             # Clients can see their own sessions
-            if session.client != user:
-                return Response(
-                    {'error': 'You can only view your own sessions'}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
+            has_permission = (session.client == user)
         else:
-            # Default: users can only see their own sessions
-            if session.staff != user and session.client != user:
-                return Response(
-                    {'error': 'You can only view your own sessions'}, 
-                    status=status.HTTP_403_FORBIDDEN
-                )
+            # Default: users can only see sessions where they're staff or client
+            has_permission = (session.staff == user or session.client == user)
     else:
-        # Default: users can only see their own sessions
-        if session.staff != user and session.client != user:
-            return Response(
-                {'error': 'You can only view your own sessions'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
+        # Default: users can only see sessions where they're staff or client
+        has_permission = (session.staff == user or session.client == user)
+    
+    if not has_permission:
+        return Response(
+            {'error': 'You can only view sessions assigned to you'}, 
+            status=status.HTTP_403_FORBIDDEN
+        )
     
     # Serialize the session with all details
     serializer = SessionDetailSerializer(session)
