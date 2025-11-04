@@ -3457,8 +3457,21 @@ def generate_bcba_session_analysis(request, session_id):
         # Generate BCBA analysis using Ocean AI
         bcba_analysis = generate_bcba_session_analysis(session_data, rbt_name=rbt_name, client_name=client_name)
         
-        # Optionally save the analysis (you can add a model field for this if needed)
-        # For now, we'll just return it
+        # Save the analysis to database
+        from ocean.models import SessionNoteFlow
+        note_flow, created = SessionNoteFlow.objects.get_or_create(session=session)
+        note_flow.bcba_analysis = bcba_analysis
+        note_flow.bcba_analyzed_by = user
+        note_flow.bcba_analyzed_at = timezone.now()
+        note_flow.save()
+        
+        # Also save as a SessionNote for easy access
+        from session.models import SessionNote
+        SessionNote.objects.create(
+            session=session,
+            note_content=bcba_analysis,
+            note_type='bcba_analysis'
+        )
         
         return Response({
             'bcba_analysis': bcba_analysis,

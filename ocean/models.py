@@ -72,6 +72,20 @@ class SessionNoteFlow(models.Model):
     ai_generated_note = models.TextField(blank=True, null=True)
     rbt_reviewed = models.BooleanField(default=False)
     final_note_submitted = models.BooleanField(default=False)
+    
+    # BCBA Analysis fields
+    bcba_analysis = models.TextField(blank=True, null=True, help_text="BCBA supervisory analysis and review notes")
+    bcba_analyzed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bcba_analyses',
+        limit_choices_to={'role__name': 'BCBA'},
+        help_text="BCBA who generated the analysis"
+    )
+    bcba_analyzed_at = models.DateTimeField(null=True, blank=True, help_text="When BCBA analysis was generated")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
