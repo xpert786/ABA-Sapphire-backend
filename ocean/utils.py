@@ -586,79 +586,40 @@ def generate_bcba_session_analysis(session_data: dict, rbt_name: str = "", clien
         client = OpenAI(api_key=getattr(settings, 'OPENAI_API_KEY', None))
 
         if not client.api_key:
-            return "AI error: OpenAI API key not configured"
-        # Create a structured prompt for BCBA analysis
-        prompt = f"""You are a Board Certified Behavior Analyst (BCBA) reviewing and analyzing an ABA therapy session conducted by an RBT (Registered Behavior Technician).
+            raise Exception("OpenAI API key not configured")
+        
+        # Optimize prompt: Summarize data to reduce token count
+        import json
+        
+        # Limit data size to prevent huge prompts
+        activities = session_data.get('activities', [])[:10]  # Limit to 10 activities
+        goals = session_data.get('goals', [])[:10]  # Limit to 10 goals
+        abc_events = session_data.get('abc_events', [])[:10]  # Limit to 10 ABC events
+        reinforcement = session_data.get('reinforcement_strategies', [])[:5]
+        incidents = session_data.get('incidents', [])[:5]
+        
+        # Create a concise prompt to reduce API call time
+        activities_str = json.dumps(activities[:5], default=str)[:400] if activities else "None"
+        goals_str = json.dumps(goals[:5], default=str)[:400] if goals else "None"
+        abc_str = json.dumps(abc_events[:5], default=str)[:400] if abc_events else "None"
+        
+        prompt = f"""You are a BCBA reviewing an RBT session. Provide a concise supervisory analysis.
 
-Your role is to provide a comprehensive supervisory analysis of this session, including:
-1. Session quality and implementation fidelity
-2. Data collection accuracy
-3. Goal progress analysis
-4. Behavioral intervention effectiveness
-5. Areas of strength and improvement
-6. Recommendations for the RBT
-7. Recommendations for future sessions
+SESSION: {rbt_name} with {client_name} on {session_data.get('session_info', {}).get('date', 'N/A')}
 
-SESSION INFORMATION:
-RBT: {rbt_name}
-Client: {client_name}
-{session_data.get('session_info', {})}
+ACTIVITIES ({len(session_data.get('activities', []))}): {activities_str}
 
-ACTIVITIES PERFORMED:
-{session_data.get('activities', [])}
+GOALS ({len(session_data.get('goals', []))}): {goals_str}
 
-GOAL PROGRESS:
-{session_data.get('goals', [])}
+ABC EVENTS ({len(session_data.get('abc_events', []))}): {abc_str}
 
-ABC (BEHAVIORAL) EVENTS:
-{session_data.get('abc_events', [])}
+Provide analysis in 4 sections:
+1. Session Overview (quality, engagement)
+2. Implementation Fidelity (protocol adherence, data collection)
+3. Strengths & Improvement Areas (RBT feedback)
+4. Clinical Recommendations (next session, training needs)
 
-REINFORCEMENT STRATEGIES:
-{session_data.get('reinforcement_strategies', [])}
-
-INCIDENTS:
-{session_data.get('incidents', [])}
-
-PRE-SESSION CHECKLIST:
-{session_data.get('checklist', {})}
-
-Please generate a comprehensive BCBA analysis that includes:
-
-1. **Session Overview & Summary**
-   - Overall session quality assessment
-   - Client engagement level
-   - Session structure and flow
-
-2. **Implementation Fidelity Review**
-   - Adherence to treatment plan protocols
-   - Data collection accuracy and completeness
-   - Proper use of reinforcement strategies
-   - Prompting hierarchy implementation
-
-3. **Goal Progress Analysis**
-   - Detailed analysis of goal achievement data
-   - Trend identification (improving, maintaining, declining)
-   - Trial-by-trial analysis if applicable
-   - Recommendations for goal modifications if needed
-
-4. **Behavioral Observations & ABC Analysis**
-   - Quality of ABC data collection
-   - Behavioral patterns identified
-   - Antecedent and consequence analysis
-   - Effectiveness of interventions
-
-5. **Strengths & Areas for Improvement**
-   - What the RBT did well
-   - Areas needing additional training or support
-   - Specific actionable feedback
-
-6. **Clinical Recommendations**
-   - Recommendations for next session
-   - Treatment plan modifications if needed
-   - Training or supervision needs for RBT
-   - Parent/caregiver communication points
-
-Use professional BCBA supervisory language. Be specific, data-driven, and constructive. Format the analysis in clear sections using markdown. Provide actionable feedback that helps improve service quality."""
+Keep analysis concise and actionable. Use markdown formatting."""
 
         messages = [
             {
@@ -671,15 +632,28 @@ Use professional BCBA supervisory language. Be specific, data-driven, and constr
             }
         ]
 
-        # Use gpt-3.5-turbo for faster response, or gpt-4 for better quality
-        # Reduce max_tokens to speed up response
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Faster model for quicker responses
-            messages=messages,
-            max_tokens=1500,  # Reduced from 2000 for faster response
-            temperature=0.3,  # Slightly creative but mostly factual
-            timeout=25  # 25 second timeout to prevent hanging
-        )
+        # Use faster model and reduce tokens for quicker response
+        # Set timeout on the client level
+        import time
+        start_time = time.time()
+        
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",  # Fastest model for quick responses
+                messages=messages,
+                max_tokens=1000,  # Further reduced for faster response
+                temperature=0.3  # Slightly creative but mostly factual
+            )
+            
+            elapsed_time = time.time() - start_time
+            if elapsed_time > 20:  # Log if taking too long
+                print(f"Warning: AI request took {elapsed_time:.2f} seconds")
+                
+        except Exception as api_error:
+            # If API call fails or times out, try with even simpler model
+            if "timeout" in str(api_error).lower() or "timed out" in str(api_error).lower():
+                raise Exception(f"AI service timeout: {str(api_error)}")
+            raise
 
         bcba_analysis = response.choices[0].message.content
         return bcba_analysis

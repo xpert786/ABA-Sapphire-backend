@@ -3465,13 +3465,91 @@ def generate_bcba_session_analysis(request, session_id):
         client_name = session.client.name if hasattr(session.client, 'name') else session.client.username
         
         # Generate BCBA analysis using Ocean AI (with timeout handling)
-        try:
-            bcba_analysis = generate_bcba_session_analysis(session_data, rbt_name=rbt_name, client_name=client_name)
-        except Exception as ai_error:
+        import threading
+        import time
+        
+        analysis_result = [None]
+        analysis_error = [None]
+        timeout_occurred = [False]
+        
+        def generate_with_timeout():
+            try:
+                result = generate_bcba_session_analysis(session_data, rbt_name=rbt_name, client_name=client_name)
+                analysis_result[0] = result
+            except Exception as e:
+                analysis_error[0] = str(e)
+        
+        # Run in a thread with timeout
+        thread = threading.Thread(target=generate_with_timeout)
+        thread.daemon = True
+        start_time = time.time()
+        thread.start()
+        thread.join(timeout=20)  # 20 second timeout (reduced from 25)
+        
+        elapsed = time.time() - start_time
+        
+        if thread.is_alive():
+            # Thread is still running, timeout occurred
+            timeout_occurred[0] = True
+            # Generate a basic analysis from the data we have
+            basic_analysis = f"""## BCBA Session Analysis
+
+### Session Overview
+**RBT:** {rbt_name}  
+**Client:** {client_name}  
+**Date:** {session_data.get('session_info', {}).get('date', 'N/A')}  
+**Status:** {session_data.get('session_info', {}).get('status', 'N/A')}
+
+### Session Data Summary
+- **Activities:** {len(session_data.get('activities', []))} recorded
+- **Goals:** {len(session_data.get('goals', []))} tracked
+- **ABC Events:** {len(session_data.get('abc_events', []))} documented
+- **Incidents:** {len(session_data.get('incidents', []))} reported
+
+### Note
+AI analysis generation timed out. Please review the session data above and provide manual analysis if needed. You may retry the AI analysis later when the service is more responsive."""
+            
+            # Save the basic analysis
+            from ocean.models import SessionNoteFlow
+            from django.db import transaction
+            try:
+                with transaction.atomic():
+                    note_flow, created = SessionNoteFlow.objects.get_or_create(session=session)
+                    note_flow.bcba_analysis = basic_analysis
+                    note_flow.bcba_analyzed_by = user
+                    note_flow.bcba_analyzed_at = timezone.now()
+                    note_flow.save()
+            except:
+                pass
+            
             return Response({
-                'error': f'Failed to generate AI analysis: {str(ai_error)}',
-                'message': 'The AI service may be experiencing delays. Please try again later.'
+                'bcba_analysis': basic_analysis,
+                'timeout_warning': True,
+                'message': 'AI analysis timed out. A basic analysis has been generated from session data. Please retry for full AI analysis.',
+                'session_info': {
+                    'session_id': session.id,
+                    'client_name': client_name,
+                    'rbt_name': rbt_name,
+                    'session_date': str(session.session_date),
+                    'status': session.status
+                }
+            }, status=status.HTTP_200_OK)
+        
+        if analysis_error[0]:
+            return Response({
+                'error': f'Failed to generate AI analysis: {analysis_error[0]}',
+                'message': 'The AI service encountered an error. Please try again later.',
+                'elapsed_time': round(elapsed, 2)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        if not analysis_result[0]:
+            return Response({
+                'error': 'AI analysis returned empty result',
+                'message': 'The AI service did not return a valid response. Please try again.',
+                'elapsed_time': round(elapsed, 2)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        bcba_analysis = analysis_result[0]
         
         # Save the analysis to database
         from ocean.models import SessionNoteFlow
