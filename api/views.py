@@ -529,3 +529,285 @@ class BusinessInsightsKPIView(APIView):
                 'error': str(e),
                 'message': 'Failed to retrieve business insights KPIs'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AdminDashboardView(APIView):
+    """
+    Comprehensive Admin Dashboard API endpoint
+    Returns all data needed for the admin dashboard including:
+    - Quick Actions
+    - Client Progress & Goal Attainment
+    - Staff Productivity & Caseload
+    - Document Management
+    - Legal Obligations
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            # Check if user is Admin or Superadmin
+            user = request.user
+            if hasattr(user, 'role') and user.role:
+                role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+                if role_name not in ['Admin', 'Superadmin']:
+                    return Response({
+                        'error': 'Only Admin and Superadmin users can access the dashboard'
+                    }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Import required models
+            from session.models import Session, GoalProgress
+            from treatment_plan.models import TreatmentPlan, TreatmentGoal
+            
+            # Get date filter from query params
+            days_back = int(request.query_params.get('days', 7))  # Default to last 7 days
+            start_date = timezone.now().date() - timedelta(days=days_back)
+            end_date = timezone.now().date()
+            
+            # 1. QUICK ACTIONS
+            quick_actions = [
+                {
+                    'id': 'practice_management',
+                    'title': 'Practice Management',
+                    'description': 'Manage practice settings and configurations',
+                    'icon': 'document',
+                    'route': '/practice-management'
+                },
+                {
+                    'id': 'business_insights',
+                    'title': 'Business Insights',
+                    'description': 'View detailed business analytics and reports',
+                    'icon': 'bar-chart',
+                    'route': '/business-insights'
+                },
+                {
+                    'id': 'payroll_management',
+                    'title': 'Payroll Management',
+                    'description': 'Manage staff payroll and payments',
+                    'icon': 'clock',
+                    'route': '/payroll-management'
+                },
+                {
+                    'id': 'messages',
+                    'title': 'Messages',
+                    'description': 'View and manage messages',
+                    'icon': 'chat',
+                    'route': '/messages'
+                },
+                {
+                    'id': 'scheduling',
+                    'title': 'Scheduling',
+                    'description': 'Manage appointments and schedules',
+                    'icon': 'calendar',
+                    'route': '/scheduling'
+                }
+            ]
+            
+            # 2. CLIENT PROGRESS & GOAL ATTAINMENT
+            clients = CustomUser.objects.filter(role__name='Clients/Parent').order_by('id')[:5]
+            
+            client_progress_data = []
+            for client in clients:
+                client_sessions = Session.objects.filter(client=client)
+                treatment_plans = TreatmentPlan.objects.filter(client_id=str(client.id))
+                total_goals = TreatmentGoal.objects.filter(treatment_plan__in=treatment_plans).count()
+                goal_progresses = GoalProgress.objects.filter(session__client=client)
+                total_goal_progress = goal_progresses.count()
+                met_goals = goal_progresses.filter(is_met=True).count()
+                progress_percentage = (met_goals / total_goal_progress * 100) if total_goal_progress > 0 else 0
+                achieved_goals = TreatmentGoal.objects.filter(
+                    treatment_plan__in=treatment_plans,
+                    is_achieved=True
+                ).count()
+                goal_attainment = (achieved_goals / total_goals * 100) if total_goals > 0 else 0
+                
+                client_progress_data.append({
+                    'client_id': client.id,
+                    'client_name': client.name or client.username or f'Client {client.id}',
+                    'progress': round(progress_percentage, 2),
+                    'goal_attainment': round(goal_attainment, 2)
+                })
+            
+            # 3. STAFF PRODUCTIVITY & CASELOAD (Weekly data)
+            staff_members = CustomUser.objects.filter(role__name__in=['RBT', 'BCBA'])
+            weekly_data = []
+            
+            for day_offset in range(7):
+                day_date = end_date - timedelta(days=6-day_offset)
+                day_name = day_date.strftime('%A')
+                
+                total_caseload = 0
+                for staff in staff_members:
+                    caseload_count = Session.objects.filter(
+                        staff=staff,
+                        session_date=day_date
+                    ).values('client').distinct().count()
+                    total_caseload += caseload_count
+                
+                total_productivity = Session.objects.filter(
+                    staff__role__name__in=['RBT', 'BCBA'],
+                    session_date=day_date,
+                    status='completed'
+                ).count()
+                
+                avg_productivity = (total_productivity / staff_members.count()) if staff_members.count() > 0 else 0
+                
+                weekly_data.append({
+                    'day': day_name,
+                    'date': day_date.isoformat(),
+                    'caseload': total_caseload,
+                    'productivity': round(avg_productivity, 2)
+                })
+            
+            # 4. DOCUMENT MANAGEMENT
+            # Get documents from user intake documents and certificates
+            documents = []
+            
+            # Get intake documents from users (BAA, Compliance Reports, etc.)
+            # Check users with uploaded documents
+            users_with_docs = CustomUser.objects.filter(
+                Q(consent_for_treatment__isnull=False) |
+                Q(hippa_authorization__isnull=False) |
+                Q(insurance_card__isnull=False) |
+                Q(physician_referral__isnull=False) |
+                Q(previous_assessment__isnull=False) |
+                Q(iep__isnull=False)
+            ).distinct()
+            
+            # Add BAA documents (HIPAA Authorization)
+            for user in users_with_docs.filter(hippa_authorization__isnull=False):
+                if user.hippa_authorization:
+                    # Use date_joined as fallback if updated_at doesn't exist
+                    last_updated = None
+                    if hasattr(user, 'date_joined') and user.date_joined:
+                        last_updated = user.date_joined.strftime('%m/%d/%Y')
+                    documents.append({
+                        'id': f'baa_{user.id}',
+                        'name': 'Business Associate Agreement (BAA)',
+                        'type': 'BAA',
+                        'last_updated': last_updated,
+                        'file_url': user.hippa_authorization.url if user.hippa_authorization else None,
+                        'client_name': user.name or user.username
+                    })
+            
+            # Add compliance reports (from user documents - could be from previous_assessment or consent_for_treatment)
+            compliance_users = users_with_docs.filter(
+                Q(previous_assessment__isnull=False) | Q(consent_for_treatment__isnull=False)
+            )
+            for user in compliance_users:
+                last_updated = None
+                if hasattr(user, 'date_joined') and user.date_joined:
+                    last_updated = user.date_joined.strftime('%m/%d/%Y')
+                
+                if user.previous_assessment:
+                    documents.append({
+                        'id': f'compliance_{user.id}_assessment',
+                        'name': 'Annual Compliance Report',
+                        'type': 'Compliance Report',
+                        'last_updated': last_updated,
+                        'file_url': user.previous_assessment.url if user.previous_assessment else None,
+                        'client_name': user.name or user.username
+                    })
+                if user.consent_for_treatment:
+                    documents.append({
+                        'id': f'compliance_{user.id}_consent',
+                        'name': 'Annual Compliance Report',
+                        'type': 'Compliance Report',
+                        'last_updated': last_updated,
+                        'file_url': user.consent_for_treatment.url if user.consent_for_treatment else None,
+                        'client_name': user.name or user.username
+                    })
+            
+            # Get certificates (staff certifications)
+            from api.models import Certificate
+            certificates = Certificate.objects.select_related('user').order_by('-updated_at')[:5]
+            for cert in certificates:
+                if cert.certificate_file:
+                    documents.append({
+                        'id': f'cert_{cert.id}',
+                        'name': f'{cert.name} - {cert.user.name or cert.user.username}',
+                        'type': 'Certificate',
+                        'last_updated': cert.updated_at.strftime('%m/%d/%Y') if cert.updated_at else None,
+                        'file_url': cert.certificate_file.url if cert.certificate_file else None,
+                        'client_name': cert.user.name or cert.user.username
+                    })
+            
+            # Sort documents by last_updated (most recent first)
+            documents.sort(key=lambda x: x['last_updated'] or '', reverse=True)
+            # Get top 3 documents
+            documents = documents[:3]
+            
+            # 5. LEGAL OBLIGATIONS
+            legal_obligations = [
+                {
+                    'id': 'hipaa_billing',
+                    'title': 'HIPAA & Billing Requirements',
+                    'description': 'This System Helps Monitor And Ensure Compliance With State & Federal Laws Like HIPAA To Protect Client Data & Ensure Proper Billing Practices.',
+                    'type': 'Compliance',
+                    'icon': 'document',
+                    'status': 'active',
+                    'last_reviewed': timezone.now().date().isoformat()
+                },
+                {
+                    'id': 'data_privacy',
+                    'title': 'Data Privacy & Security',
+                    'description': 'Ensures all client data is protected according to HIPAA regulations and state privacy laws.',
+                    'type': 'Privacy',
+                    'icon': 'shield',
+                    'status': 'active',
+                    'last_reviewed': timezone.now().date().isoformat()
+                }
+            ]
+            
+            # 6. APPOINTMENT STATISTICS
+            all_sessions = Session.objects.filter(
+                session_date__gte=start_date,
+                session_date__lte=end_date
+            )
+            completed_sessions = all_sessions.filter(status='completed').count()
+            cancelled_sessions = all_sessions.filter(status='cancelled').count()
+            total_appointments = completed_sessions + cancelled_sessions
+            attendance_rate = (completed_sessions / total_appointments * 100) if total_appointments > 0 else 0
+            cancellation_rate = (cancelled_sessions / total_appointments * 100) if total_appointments > 0 else 0
+            
+            appointment_stats = {
+                'attendance_rate': round(attendance_rate, 2),
+                'cancellation_rate': round(cancellation_rate, 2),
+                'total_appointments': total_appointments,
+                'completed': completed_sessions,
+                'cancelled': cancelled_sessions
+            }
+            
+            return Response({
+                'quick_actions': quick_actions,
+                'client_progress': {
+                    'data': client_progress_data,
+                    'filter': f'Last {days_back} days',
+                    'date_range': {
+                        'start_date': start_date.isoformat(),
+                        'end_date': end_date.isoformat(),
+                        'days': days_back
+                    }
+                },
+                'staff_productivity': {
+                    'data': weekly_data,
+                    'legend': {
+                        'caseload': 'Caseload',
+                        'productivity': 'Staff Productivity'
+                    }
+                },
+                'document_management': {
+                    'documents': documents,
+                    'total_documents': len(documents)
+                },
+                'legal_obligations': legal_obligations,
+                'appointment_stats': appointment_stats,
+                'timestamp': timezone.now().isoformat()
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            import traceback
+            return Response({
+                'error': str(e),
+                'traceback': traceback.format_exc(),
+                'message': 'Failed to retrieve admin dashboard data'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
