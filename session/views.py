@@ -2438,12 +2438,45 @@ def save_session_data_and_generate_notes(request, session_id):
     if 'abc_events' in request_data:
         abc_saved = []
         for abc_data in request_data['abc_events']:
+            # Parse time if provided
+            custom_timestamp = None
+            if 'time' in abc_data and abc_data.get('time'):
+                try:
+                    # Parse time string (format: "HH:MM:SS" or "HH:MM")
+                    time_str = abc_data.get('time', '')
+                    from datetime import datetime as dt
+                    if ':' in time_str:
+                        time_parts = time_str.split(':')
+                        if len(time_parts) >= 2:
+                            hour = int(time_parts[0])
+                            minute = int(time_parts[1])
+                            second = int(time_parts[2]) if len(time_parts) > 2 else 0
+                            # Combine with session date
+                            custom_timestamp = timezone.make_aware(
+                                dt.combine(session.session_date, dt.time(hour, minute, second))
+                            )
+                except (ValueError, TypeError):
+                    # If parsing fails, use None (will use auto_now_add default)
+                    custom_timestamp = None
+            
+            # Combine consequence and notes if notes provided
+            consequence_text = abc_data.get('consequence', '')
+            notes_text = abc_data.get('notes', '')
+            if notes_text:
+                consequence_text = f"{consequence_text}\n\nNotes: {notes_text}" if consequence_text else f"Notes: {notes_text}"
+            
+            # Create ABC event
             abc_event = ABCEvent.objects.create(
                 session=session,
                 antecedent=abc_data.get('antecedent', ''),
                 behavior=abc_data.get('behavior', ''),
-                consequence=abc_data.get('consequence', '')
+                consequence=consequence_text
             )
+            # Update timestamp if custom time was provided (bypass auto_now_add)
+            if custom_timestamp:
+                ABCEvent.objects.filter(id=abc_event.id).update(timestamp=custom_timestamp)
+                abc_event.refresh_from_db()
+            
             abc_saved.append(abc_event.id)
         saved_data['abc_events'] = f"{len(abc_saved)} ABC events saved"
     
@@ -2530,6 +2563,45 @@ def save_session_data_and_generate_notes(request, session_id):
                         checklist_saved.append(item_key)
         
         saved_data['pre_session'] = f"{len(checklist_saved)} checklist items saved"
+    
+    # Save checklist (alternative format)
+    if 'checklist' in request_data:
+        checklist_data = request_data['checklist']
+        checklist_saved = []
+        
+        # Map checklist keys to proper display names
+        checklist_name_map = {
+            'materials_ready': 'Materials Ready',
+            'environment_prepared': 'Environment Prepared',
+            'reviewed_goals': 'Reviewed Goals',
+            'data_collection_ready': 'Data Collection Ready',
+        }
+        
+        checklist_notes = checklist_data.get('notes', '')
+        
+        for key, value in checklist_data.items():
+            if key == 'notes':
+                continue  # Skip notes field, handled separately
+            
+            if key in checklist_name_map:
+                item_name = checklist_name_map[key]
+            else:
+                # Use key as item name if not in map
+                item_name = key.replace('_', ' ').title()
+            
+            # Only save if value is True
+            if value is True:
+                notes = checklist_notes if key in checklist_name_map else ''
+                PreSessionChecklist.objects.create(
+                    session=session,
+                    item_name=item_name[:255],
+                    is_completed=True,
+                    notes=notes
+                )
+                checklist_saved.append(key)
+        
+        if checklist_saved:
+            saved_data['checklist'] = f"{len(checklist_saved)} checklist items saved"
     
     # Now generate AI notes using the saved data
     try:
