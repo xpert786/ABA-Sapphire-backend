@@ -20,7 +20,8 @@ from .views import (
     CurrentUserDetailView,
     CertificateListCreateView,
     CertificateDetailView,
-    UserCertificatesView
+    UserCertificatesView,
+    BusinessInsightsKPIView
 )
 
 urlpatterns = [
@@ -46,4 +47,7 @@ urlpatterns = [
     path('certificates/', CertificateListCreateView.as_view(), name='certificate-list-create'),
     path('certificates/<int:id>/', CertificateDetailView.as_view(), name='certificate-detail'),
     path('users/<int:user_id>/certificates/', UserCertificatesView.as_view(), name='user-certificates'),
+    
+    # Business Insights KPIs
+    path('business-insights/kpis/', BusinessInsightsKPIView.as_view(), name='business-insights-kpis'),
 ]

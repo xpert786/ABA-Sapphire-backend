@@ -1,4 +1,6 @@
 import random
+from datetime import datetime, timedelta
+from django.utils import timezone
 
 from django.contrib.auth import get_user_model
 from rest_framework import generics, status, response, permissions
@@ -16,7 +18,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.db.models import Count
+from django.db.models import Count, Q, Avg, Sum
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import logout
 from rest_framework_simplejwt.exceptions import TokenError
@@ -358,3 +360,172 @@ class UserCertificatesView(generics.ListAPIView):
     def get_queryset(self):
         user_id = self.kwargs.get('user_id')
         return Certificate.objects.filter(user_id=user_id)
+
+
+class BusinessInsightsKPIView(APIView):
+    """
+    API endpoint to get Business Insights KPIs for admin dashboard
+    Returns client progress, goal attainment, staff productivity, caseload, and appointment statistics
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            # Import session models
+            from session.models import Session, GoalProgress
+            from treatment_plan.models import TreatmentPlan, TreatmentGoal
+            
+            # Get date filters from query params (optional)
+            days_back = int(request.query_params.get('days', 7))  # Default to last 7 days
+            start_date = timezone.now().date() - timedelta(days=days_back)
+            end_date = timezone.now().date()
+            
+            # 1. CLIENT PROGRESS & GOAL ATTAINMENT
+            # Get all clients
+            clients = CustomUser.objects.filter(role__name='Clients/Parent').order_by('id')[:5]
+            
+            client_progress_data = []
+            for client in clients:
+                # Get all sessions for this client
+                client_sessions = Session.objects.filter(client=client)
+                
+                # Get all goals for this client from treatment plans
+                # Note: TreatmentPlan.client_id is a CharField, so we need to convert to string
+                treatment_plans = TreatmentPlan.objects.filter(client_id=str(client.id))
+                total_goals = TreatmentGoal.objects.filter(treatment_plan__in=treatment_plans).count()
+                
+                # Get goal progress from sessions
+                goal_progresses = GoalProgress.objects.filter(session__client=client)
+                total_goal_progress = goal_progresses.count()
+                met_goals = goal_progresses.filter(is_met=True).count()
+                
+                # Calculate progress percentage (based on goal progress entries)
+                progress_percentage = (met_goals / total_goal_progress * 100) if total_goal_progress > 0 else 0
+                
+                # Calculate goal attainment (achieved goals vs total goals)
+                achieved_goals = TreatmentGoal.objects.filter(
+                    treatment_plan__in=treatment_plans,
+                    is_achieved=True
+                ).count()
+                goal_attainment = (achieved_goals / total_goals * 100) if total_goals > 0 else 0
+                
+                client_progress_data.append({
+                    'client_name': client.name or client.username or f'Client {client.id}',
+                    'client_id': client.id,
+                    'progress': round(progress_percentage, 2),
+                    'goal_attainment': round(goal_attainment, 2)
+                })
+            
+            # 2. STAFF PRODUCTIVITY & CASELOAD (Weekly data)
+            staff_members = CustomUser.objects.filter(role__name__in=['RBT', 'BCBA'])
+            
+            # Get last 7 days for weekly chart
+            days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            weekly_data = []
+            
+            for day_offset in range(7):
+                day_date = end_date - timedelta(days=6-day_offset)
+                day_name = day_date.strftime('%A')
+                
+                # Calculate caseload (number of unique clients assigned to staff)
+                total_caseload = 0
+                for staff in staff_members:
+                    # Count clients assigned to this staff member
+                    caseload_count = Session.objects.filter(
+                        staff=staff,
+                        session_date=day_date
+                    ).values('client').distinct().count()
+                    total_caseload += caseload_count
+                
+                # Calculate staff productivity (completed sessions per staff)
+                total_productivity = Session.objects.filter(
+                    staff__role__name__in=['RBT', 'BCBA'],
+                    session_date=day_date,
+                    status='completed'
+                ).count()
+                
+                # Average productivity per staff member
+                avg_productivity = (total_productivity / staff_members.count()) if staff_members.count() > 0 else 0
+                
+                weekly_data.append({
+                    'day': day_name,
+                    'date': day_date.isoformat(),
+                    'caseload': total_caseload,
+                    'productivity': round(avg_productivity, 2)
+                })
+            
+            # 3. APPOINTMENT & CANCELLATION RATES
+            # Get all sessions in the date range
+            all_sessions = Session.objects.filter(
+                session_date__gte=start_date,
+                session_date__lte=end_date
+            )
+            
+            completed_sessions = all_sessions.filter(status='completed').count()
+            cancelled_sessions = all_sessions.filter(status='cancelled').count()
+            total_appointments = completed_sessions + cancelled_sessions
+            
+            attendance_rate = (completed_sessions / total_appointments * 100) if total_appointments > 0 else 0
+            cancellation_rate = (cancelled_sessions / total_appointments * 100) if total_appointments > 0 else 0
+            
+            appointment_data = {
+                'attendance_rate': round(attendance_rate, 2),
+                'cancellation_rate': round(cancellation_rate, 2),
+                'total_appointments': total_appointments,
+                'completed': completed_sessions,
+                'cancelled': cancelled_sessions
+            }
+            
+            # 4. ADDITIONAL INSIGHTS
+            # Get insights based on the data
+            insights = []
+            
+            # Client Progress Insight
+            if client_progress_data:
+                avg_goal_attainment = sum([c['goal_attainment'] for c in client_progress_data]) / len(client_progress_data)
+                if avg_goal_attainment >= 70:
+                    insights.append({
+                        'title': 'Client Progress And Goal Attainment Rates',
+                        'insight': f'High success rate ({avg_goal_attainment:.1f}%) indicates a strong, marketable service. Consider expanding the service, creating group programs, or using it as a case study in marketing materials to attract new clients.'
+                    })
+            
+            # Staff Productivity Insight
+            if weekly_data:
+                avg_caseload = sum([d['caseload'] for d in weekly_data]) / len(weekly_data)
+                avg_productivity = sum([d['productivity'] for d in weekly_data]) / len(weekly_data)
+                
+                if avg_caseload > 10:  # High caseload threshold
+                    insights.append({
+                        'title': 'Staff Productivity And Caseload Efficiency',
+                        'insight': 'Some staff members are over-booked. It may be time to hire or invest in training for less utilized staff. Highly efficient staff could mentor new hires to balance workload, prevent burnout, and ensure the practice can handle more clients.'
+                    })
+                elif avg_productivity < 5:
+                    insights.append({
+                        'title': 'Staff Productivity And Caseload Efficiency',
+                        'insight': 'Staff productivity is below optimal levels. Consider additional training or support to improve efficiency.'
+                    })
+            
+            # Cancellation Rate Insight
+            if cancellation_rate > 20:
+                insights.append({
+                    'title': 'Appointment Attendance And Cancellation Rates',
+                    'insight': f'A high cancellation rate ({cancellation_rate:.1f}%) could indicate a need for more proactive reminders or a re-evaluation of booking policies. Reducing cancellations is linked to more consistent revenue and a better client experience.'
+                })
+            
+            return Response({
+                'client_progress': client_progress_data,
+                'staff_productivity': weekly_data,
+                'appointment_stats': appointment_data,
+                'insights': insights,
+                'date_range': {
+                    'start_date': start_date.isoformat(),
+                    'end_date': end_date.isoformat(),
+                    'days': days_back
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Failed to retrieve business insights KPIs'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
