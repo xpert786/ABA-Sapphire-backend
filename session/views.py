@@ -3281,6 +3281,224 @@ def generate_ocean_ai_note(request, session_id):
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
+def generate_bcba_session_analysis(request, session_id):
+    """
+    API endpoint for BCBA to generate comprehensive analysis notes for RBT sessions.
+    Uses Ocean AI to analyze session quality, implementation fidelity, and provide supervisory feedback.
+    
+    Only BCBAs can use this endpoint. They must have permission to view the session
+    (either assigned BCBA for the client or has treatment plan for the client).
+    
+    Endpoint: POST /session/sessions/{session_id}/bcba-analysis/
+    """
+    # Get the session
+    session = get_object_or_404(Session, id=session_id)
+    
+    # Check permissions - only BCBA can generate analysis
+    user = request.user
+    has_permission = False
+    
+    if hasattr(user, 'role') and user.role:
+        role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+        
+        # Admin and Superadmin can access all sessions
+        if role_name in ['Admin', 'Superadmin']:
+            has_permission = True
+        # BCBA can access if:
+        # 1. They are the assigned BCBA for the client
+        # 2. They have treatment plans for this client
+        # 3. They are reviewing an RBT session (staff is RBT)
+        elif role_name == 'BCBA':
+            # Check if client is assigned to this BCBA
+            if hasattr(session.client, 'assigned_bcba') and session.client.assigned_bcba == user:
+                has_permission = True
+            else:
+                # Check if BCBA has treatment plans for this client
+                try:
+                    from treatment_plan.models import TreatmentPlan
+                    client_identifier = str(session.client.id)
+                    has_treatment_plan = TreatmentPlan.objects.filter(
+                        bcba=user
+                    ).filter(
+                        models.Q(client_id=client_identifier) | 
+                        models.Q(client_id=session.client.username) |
+                        models.Q(client_id=getattr(session.client, 'staff_id', '')) |
+                        models.Q(client_name__icontains=session.client.name if hasattr(session.client, 'name') and session.client.name else '')
+                    ).exists()
+                    if has_treatment_plan:
+                        has_permission = True
+                except Exception:
+                    pass
+    
+    if not has_permission:
+        return Response({
+            'error': 'Permission denied. Only BCBAs assigned to this client or with treatment plans for this client can generate analysis notes.'
+        }, status=status.HTTP_403_FORBIDDEN)
+    
+    # Verify session was conducted by an RBT
+    if session.staff and hasattr(session.staff, 'role') and session.staff.role:
+        staff_role = session.staff.role.name if hasattr(session.staff.role, 'name') else str(session.staff.role)
+        if staff_role != 'RBT':
+            return Response({
+                'error': 'This endpoint is for analyzing RBT sessions only. The session staff member is not an RBT.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        from ocean.utils import generate_bcba_session_analysis
+        
+        # Gather comprehensive session data
+        session_data = {}
+        
+        # 1. Basic session info
+        session_data['session_info'] = {
+            'client': session.client.name if hasattr(session.client, 'name') else session.client.username,
+            'staff': session.staff.name if hasattr(session.staff, 'name') else session.staff.username if session.staff else 'Not assigned',
+            'date': str(session.session_date),
+            'start_time': str(session.start_time),
+            'end_time': str(session.end_time),
+            'location': session.location or 'Not specified',
+            'service_type': session.service_type or 'ABA',
+            'status': session.status
+        }
+        
+        # 2. Timer data
+        try:
+            timer = session.timer
+            session_data['timer'] = {
+                'total_duration': str(timer.total_duration),
+                'is_running': timer.is_running
+            }
+        except:
+            session_data['timer'] = {'total_duration': 'Not tracked', 'is_running': False}
+        
+        # 3. Activities
+        activities = session.activities.all()
+        session_data['activities'] = [
+            {
+                'name': a.activity_name,
+                'duration': a.duration_minutes,
+                'description': a.reinforcement_strategies or '',
+                'response': a.notes or ''
+            }
+            for a in activities
+        ]
+        
+        # 4. Goals
+        goals = session.goal_progress.all()
+        session_data['goals'] = [
+            {
+                'goal': g.goal_description,
+                'is_met': g.is_met,
+                'implementation': g.implementation_method,
+                'trials': getattr(g, 'trials', None),
+                'successes': getattr(g, 'successes', None),
+                'percentage': getattr(g, 'percentage', None),
+                'notes': g.notes or ''
+            }
+            for g in goals
+        ]
+        
+        # 5. ABC Events
+        abc_events = session.abc_events.all()
+        session_data['abc_events'] = [
+            {
+                'antecedent': e.antecedent or '',
+                'behavior': e.behavior or '',
+                'consequence': e.consequence or '',
+                'timestamp': str(e.timestamp) if hasattr(e, 'timestamp') and e.timestamp else None,
+                'notes': getattr(e, 'notes', '') or ''
+            }
+            for e in abc_events
+        ]
+        
+        # 6. Reinforcement Strategies
+        reinforcement_strategies = session.reinforcement_strategies.all()
+        session_data['reinforcement_strategies'] = [
+            {
+                'type': s.strategy_type,
+                'frequency': s.frequency,
+                'pr_ratio': s.pr_ratio,
+                'notes': s.notes or ''
+            }
+            for s in reinforcement_strategies
+        ]
+        
+        # 7. Incidents
+        incidents = session.incidents.all()
+        session_data['incidents'] = [
+            {
+                'type': i.incident_type,
+                'severity': i.behavior_severity,
+                'duration': i.duration_minutes,
+                'description': i.description or ''
+            }
+            for i in incidents
+        ]
+        
+        # 8. Pre-session Checklist
+        checklist_items = session.checklist_items.all()
+        session_data['checklist'] = {
+            'items': [
+                {
+                    'item_name': item.item_name,
+                    'is_completed': item.is_completed,
+                    'notes': item.notes or ''
+                }
+                for item in checklist_items
+            ],
+            'total_items': checklist_items.count(),
+            'completed_items': checklist_items.filter(is_completed=True).count()
+        }
+        
+        # Get RBT and client names for the analysis
+        rbt_name = session.staff.name if session.staff and hasattr(session.staff, 'name') else (session.staff.username if session.staff else 'Unknown RBT')
+        client_name = session.client.name if hasattr(session.client, 'name') else session.client.username
+        
+        # Generate BCBA analysis using Ocean AI
+        bcba_analysis = generate_bcba_session_analysis(session_data, rbt_name=rbt_name, client_name=client_name)
+        
+        # Optionally save the analysis (you can add a model field for this if needed)
+        # For now, we'll just return it
+        
+        return Response({
+            'bcba_analysis': bcba_analysis,
+            'session_info': {
+                'session_id': session.id,
+                'client_name': client_name,
+                'rbt_name': rbt_name,
+                'session_date': str(session.session_date),
+                'status': session.status
+            },
+            'session_data_summary': {
+                'activities_count': len(session_data['activities']),
+                'goals_count': len(session_data['goals']),
+                'abc_events_count': len(session_data['abc_events']),
+                'incidents_count': len(session_data['incidents']),
+                'checklist_items': session_data['checklist']['total_items'],
+                'checklist_completed': session_data['checklist']['completed_items']
+            },
+            'generated_by': {
+                'bcba_id': user.id,
+                'bcba_name': user.name if hasattr(user, 'name') else user.username
+            },
+            'generated_at': timezone.now().isoformat(),
+            'message': 'BCBA analysis generated successfully'
+        }, status=status.HTTP_200_OK)
+        
+    except ImportError:
+        return Response({
+            'error': 'Ocean AI module not available'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as e:
+        import traceback
+        return Response({
+            'error': f'Failed to generate BCBA analysis: {str(e)}',
+            'traceback': traceback.format_exc()
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
 def finalize_session_with_ocean(request, session_id):
     """
     Finalize session with Ocean AI note flow validation

@@ -558,3 +558,128 @@ Use professional ABA terminology. Be specific with data and observations. Format
 
     except Exception as e:
         return f"AI error generating session notes: {str(e)}"
+
+
+def generate_bcba_session_analysis(session_data: dict, rbt_name: str = "", client_name: str = "") -> str:
+    """
+    Generate comprehensive BCBA analysis notes for an RBT session.
+    This is from a supervisor/review perspective, analyzing the session quality,
+    implementation fidelity, and providing feedback.
+    
+    Args:
+        session_data: Dictionary containing all session information including:
+            - session_info (client, staff, date, time, location, etc.)
+            - activities (list of activities performed)
+            - goals (goal progress and trial data)
+            - abc_events (behavioral observations)
+            - reinforcement_strategies (reinforcement used)
+            - incidents (any incidents)
+            - checklist (pre-session items)
+        rbt_name: Name of the RBT who conducted the session
+        client_name: Name of the client
+        
+    Returns:
+        str: Comprehensive BCBA analysis and review notes in markdown format
+    """
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=getattr(settings, 'OPENAI_API_KEY', None))
+
+        if not client.api_key:
+            return "AI error: OpenAI API key not configured"
+        # Create a structured prompt for BCBA analysis
+        prompt = f"""You are a Board Certified Behavior Analyst (BCBA) reviewing and analyzing an ABA therapy session conducted by an RBT (Registered Behavior Technician).
+
+Your role is to provide a comprehensive supervisory analysis of this session, including:
+1. Session quality and implementation fidelity
+2. Data collection accuracy
+3. Goal progress analysis
+4. Behavioral intervention effectiveness
+5. Areas of strength and improvement
+6. Recommendations for the RBT
+7. Recommendations for future sessions
+
+SESSION INFORMATION:
+RBT: {rbt_name}
+Client: {client_name}
+{session_data.get('session_info', {})}
+
+ACTIVITIES PERFORMED:
+{session_data.get('activities', [])}
+
+GOAL PROGRESS:
+{session_data.get('goals', [])}
+
+ABC (BEHAVIORAL) EVENTS:
+{session_data.get('abc_events', [])}
+
+REINFORCEMENT STRATEGIES:
+{session_data.get('reinforcement_strategies', [])}
+
+INCIDENTS:
+{session_data.get('incidents', [])}
+
+PRE-SESSION CHECKLIST:
+{session_data.get('checklist', {})}
+
+Please generate a comprehensive BCBA analysis that includes:
+
+1. **Session Overview & Summary**
+   - Overall session quality assessment
+   - Client engagement level
+   - Session structure and flow
+
+2. **Implementation Fidelity Review**
+   - Adherence to treatment plan protocols
+   - Data collection accuracy and completeness
+   - Proper use of reinforcement strategies
+   - Prompting hierarchy implementation
+
+3. **Goal Progress Analysis**
+   - Detailed analysis of goal achievement data
+   - Trend identification (improving, maintaining, declining)
+   - Trial-by-trial analysis if applicable
+   - Recommendations for goal modifications if needed
+
+4. **Behavioral Observations & ABC Analysis**
+   - Quality of ABC data collection
+   - Behavioral patterns identified
+   - Antecedent and consequence analysis
+   - Effectiveness of interventions
+
+5. **Strengths & Areas for Improvement**
+   - What the RBT did well
+   - Areas needing additional training or support
+   - Specific actionable feedback
+
+6. **Clinical Recommendations**
+   - Recommendations for next session
+   - Treatment plan modifications if needed
+   - Training or supervision needs for RBT
+   - Parent/caregiver communication points
+
+Use professional BCBA supervisory language. Be specific, data-driven, and constructive. Format the analysis in clear sections using markdown. Provide actionable feedback that helps improve service quality."""
+
+        messages = [
+            {
+                "role": "system", 
+                "content": "You are an expert BCBA providing supervisory analysis and review of ABA therapy sessions. Your analysis is thorough, professional, data-driven, and focuses on implementation fidelity, service quality, and clinical recommendations. You provide constructive feedback to help RBTs improve their practice."
+            },
+            {
+                "role": "user", 
+                "content": prompt
+            }
+        ]
+
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=messages,
+            max_tokens=2000,  # More tokens for comprehensive analysis
+            temperature=0.3  # Slightly creative but mostly factual
+        )
+
+        bcba_analysis = response.choices[0].message.content
+        return bcba_analysis
+
+    except Exception as e:
+        return f"AI error generating BCBA analysis: {str(e)}"

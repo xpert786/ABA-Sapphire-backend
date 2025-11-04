@@ -49,6 +49,7 @@ urlpatterns = [
     path('sessions/<int:session_id>/ocean-prompt/<int:prompt_id>/respond/', views.respond_to_ocean_prompt, name='respond-ocean-prompt'),
     path('sessions/<int:session_id>/ocean-ai-note/', views.generate_ocean_ai_note, name='generate-ocean-ai-note'),
     path('sessions/<int:session_id>/ocean-finalize/', views.finalize_session_with_ocean, name='ocean-finalize'),
+    path('sessions/<int:session_id>/bcba-analysis/', views.generate_bcba_session_analysis, name='generate-bcba-analysis'),
     
     # Time Tracker endpoints
     path('time-trackers/', views.TimeTrackerView.as_view(), name='time-tracker-list'),

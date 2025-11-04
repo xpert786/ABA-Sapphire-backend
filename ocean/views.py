@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import ChatMessage, Alert, SessionPrompt, SessionNoteFlow, SkillProgress, Milestone, ProgressMonitoring
 from .serializers import ChatMessageSerializer, AlertSerializer, SessionPromptSerializer, SessionNoteFlowSerializer, SkillProgressSerializer, ProgressMonitoringSerializer
-from .utils import generate_ai_response, generate_ai_response_with_db_context, generate_session_notes
+from .utils import generate_ai_response, generate_ai_response_with_db_context, generate_session_notes, generate_bcba_session_analysis
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta, datetime
