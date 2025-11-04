@@ -20,4 +20,8 @@ urlpatterns = [
     
     # Approval URLs
     path('approvals/', views.TreatmentPlanApprovalListView.as_view(), name='treatment-plan-approval-list'),
+    
+    # AI Goal Suggestions
+    path('plans/goal-suggestions/', views.ai_goal_suggestions, name='ai-goal-suggestions'),
+    path('plans/<int:pk>/goal-suggestions/', views.ai_goal_suggestions_for_plan, name='ai-goal-suggestions-for-plan'),
 ]
