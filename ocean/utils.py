@@ -671,15 +671,19 @@ Use professional BCBA supervisory language. Be specific, data-driven, and constr
             }
         ]
 
+        # Use gpt-3.5-turbo for faster response, or gpt-4 for better quality
+        # Reduce max_tokens to speed up response
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",  # Faster model for quicker responses
             messages=messages,
-            max_tokens=2000,  # More tokens for comprehensive analysis
-            temperature=0.3  # Slightly creative but mostly factual
+            max_tokens=1500,  # Reduced from 2000 for faster response
+            temperature=0.3,  # Slightly creative but mostly factual
+            timeout=25  # 25 second timeout to prevent hanging
         )
 
         bcba_analysis = response.choices[0].message.content
         return bcba_analysis
 
     except Exception as e:
-        return f"AI error generating BCBA analysis: {str(e)}"
+        # Re-raise the exception so the view can handle it
+        raise Exception(f"AI error generating BCBA analysis: {str(e)}")

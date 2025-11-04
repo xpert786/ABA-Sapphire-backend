@@ -3291,13 +3291,29 @@ def generate_bcba_session_analysis(request, session_id):
     
     Endpoint: POST /session/sessions/{session_id}/bcba-analysis/
     """
-    # Get the session
-    session = get_object_or_404(Session, id=session_id)
-    
-    # Check permissions - only BCBA can generate analysis
+    # Check permissions and get session with optimized queries
     user = request.user
     has_permission = False
     
+    # Get session with all related data in one optimized query
+    try:
+        session = Session.objects.select_related(
+            'client', 'staff', 'client__role', 'staff__role'
+        ).prefetch_related(
+            'activities',
+            'goal_progress',
+            'abc_events',
+            'reinforcement_strategies',
+            'incidents',
+            'checklist_items',
+            'timer'
+        ).get(id=session_id)
+    except Session.DoesNotExist:
+        return Response({
+            'error': 'Session not found'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # Check permissions - only BCBA can generate analysis
     if hasattr(user, 'role') and user.role:
         role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
         
@@ -3313,7 +3329,7 @@ def generate_bcba_session_analysis(request, session_id):
             if hasattr(session.client, 'assigned_bcba') and session.client.assigned_bcba == user:
                 has_permission = True
             else:
-                # Check if BCBA has treatment plans for this client
+                # Check if BCBA has treatment plans for this client (optimized query)
                 try:
                     from treatment_plan.models import TreatmentPlan
                     client_identifier = str(session.client.id)
@@ -3346,13 +3362,13 @@ def generate_bcba_session_analysis(request, session_id):
     try:
         from ocean.utils import generate_bcba_session_analysis
         
-        # Gather comprehensive session data
+        # Gather comprehensive session data efficiently
         session_data = {}
         
         # 1. Basic session info
         session_data['session_info'] = {
-            'client': session.client.name if hasattr(session.client, 'name') else session.client.username,
-            'staff': session.staff.name if hasattr(session.staff, 'name') else session.staff.username if session.staff else 'Not assigned',
+            'client': session.client.name if hasattr(session.client, 'name') and session.client.name else session.client.username,
+            'staff': session.staff.name if session.staff and hasattr(session.staff, 'name') and session.staff.name else (session.staff.username if session.staff else 'Not assigned'),
             'date': str(session.session_date),
             'start_time': str(session.start_time),
             'end_time': str(session.end_time),
@@ -3361,45 +3377,41 @@ def generate_bcba_session_analysis(request, session_id):
             'status': session.status
         }
         
-        # 2. Timer data
-        try:
-            timer = session.timer
+        # 2. Timer data (already prefetched)
+        if hasattr(session, 'timer') and session.timer:
             session_data['timer'] = {
-                'total_duration': str(timer.total_duration),
-                'is_running': timer.is_running
+                'total_duration': str(session.timer.total_duration),
+                'is_running': session.timer.is_running
             }
-        except:
+        else:
             session_data['timer'] = {'total_duration': 'Not tracked', 'is_running': False}
         
-        # 3. Activities
-        activities = session.activities.all()
+        # 3. Activities (already prefetched)
         session_data['activities'] = [
             {
-                'name': a.activity_name,
-                'duration': a.duration_minutes,
+                'name': a.activity_name or '',
+                'duration': a.duration_minutes or 0,
                 'description': a.reinforcement_strategies or '',
                 'response': a.notes or ''
             }
-            for a in activities
+            for a in session.activities.all()
         ]
         
-        # 4. Goals
-        goals = session.goal_progress.all()
+        # 4. Goals (already prefetched)
         session_data['goals'] = [
             {
-                'goal': g.goal_description,
+                'goal': g.goal_description or '',
                 'is_met': g.is_met,
-                'implementation': g.implementation_method,
+                'implementation': g.implementation_method or '',
                 'trials': getattr(g, 'trials', None),
                 'successes': getattr(g, 'successes', None),
                 'percentage': getattr(g, 'percentage', None),
                 'notes': g.notes or ''
             }
-            for g in goals
+            for g in session.goal_progress.all()
         ]
         
-        # 5. ABC Events
-        abc_events = session.abc_events.all()
+        # 5. ABC Events (already prefetched)
         session_data['abc_events'] = [
             {
                 'antecedent': e.antecedent or '',
@@ -3408,70 +3420,92 @@ def generate_bcba_session_analysis(request, session_id):
                 'timestamp': str(e.timestamp) if hasattr(e, 'timestamp') and e.timestamp else None,
                 'notes': getattr(e, 'notes', '') or ''
             }
-            for e in abc_events
+            for e in session.abc_events.all()
         ]
         
-        # 6. Reinforcement Strategies
-        reinforcement_strategies = session.reinforcement_strategies.all()
+        # 6. Reinforcement Strategies (already prefetched)
         session_data['reinforcement_strategies'] = [
             {
-                'type': s.strategy_type,
-                'frequency': s.frequency,
-                'pr_ratio': s.pr_ratio,
+                'type': s.strategy_type or '',
+                'frequency': s.frequency or '',
+                'pr_ratio': s.pr_ratio or '',
                 'notes': s.notes or ''
             }
-            for s in reinforcement_strategies
+            for s in session.reinforcement_strategies.all()
         ]
         
-        # 7. Incidents
-        incidents = session.incidents.all()
+        # 7. Incidents (already prefetched)
         session_data['incidents'] = [
             {
-                'type': i.incident_type,
-                'severity': i.behavior_severity,
-                'duration': i.duration_minutes,
+                'type': i.incident_type or '',
+                'severity': i.behavior_severity or '',
+                'duration': i.duration_minutes or 0,
                 'description': i.description or ''
             }
-            for i in incidents
+            for i in session.incidents.all()
         ]
         
-        # 8. Pre-session Checklist
-        checklist_items = session.checklist_items.all()
+        # 8. Pre-session Checklist (already prefetched)
+        checklist_items = list(session.checklist_items.all())
         session_data['checklist'] = {
             'items': [
                 {
-                    'item_name': item.item_name,
+                    'item_name': item.item_name or '',
                     'is_completed': item.is_completed,
                     'notes': item.notes or ''
                 }
                 for item in checklist_items
             ],
-            'total_items': checklist_items.count(),
-            'completed_items': checklist_items.filter(is_completed=True).count()
+            'total_items': len(checklist_items),
+            'completed_items': sum(1 for item in checklist_items if item.is_completed)
         }
         
         # Get RBT and client names for the analysis
         rbt_name = session.staff.name if session.staff and hasattr(session.staff, 'name') else (session.staff.username if session.staff else 'Unknown RBT')
         client_name = session.client.name if hasattr(session.client, 'name') else session.client.username
         
-        # Generate BCBA analysis using Ocean AI
-        bcba_analysis = generate_bcba_session_analysis(session_data, rbt_name=rbt_name, client_name=client_name)
+        # Generate BCBA analysis using Ocean AI (with timeout handling)
+        try:
+            bcba_analysis = generate_bcba_session_analysis(session_data, rbt_name=rbt_name, client_name=client_name)
+        except Exception as ai_error:
+            return Response({
+                'error': f'Failed to generate AI analysis: {str(ai_error)}',
+                'message': 'The AI service may be experiencing delays. Please try again later.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Save the analysis to database
         from ocean.models import SessionNoteFlow
-        note_flow, created = SessionNoteFlow.objects.get_or_create(session=session)
-        note_flow.bcba_analysis = bcba_analysis
-        note_flow.bcba_analyzed_by = user
-        note_flow.bcba_analyzed_at = timezone.now()
-        note_flow.save()
+        from django.db import transaction
         
-        # Also save as a SessionNote for easy access
-        from session.models import SessionNote
-        SessionNote.objects.create(
-            session=session,
-            note_content=bcba_analysis,
-            note_type='bcba_analysis'
-        )
+        try:
+            with transaction.atomic():
+                note_flow, created = SessionNoteFlow.objects.get_or_create(session=session)
+                note_flow.bcba_analysis = bcba_analysis
+                note_flow.bcba_analyzed_by = user
+                note_flow.bcba_analyzed_at = timezone.now()
+                note_flow.save()
+                
+                # Also save as a SessionNote for easy access
+                from session.models import SessionNote
+                SessionNote.objects.create(
+                    session=session,
+                    note_content=bcba_analysis,
+                    note_type='bcba_analysis'
+                )
+        except Exception as db_error:
+            # If database save fails, still return the analysis
+            return Response({
+                'bcba_analysis': bcba_analysis,
+                'warning': f'Analysis generated but failed to save to database: {str(db_error)}',
+                'session_info': {
+                    'session_id': session.id,
+                    'client_name': client_name,
+                    'rbt_name': rbt_name,
+                    'session_date': str(session.session_date),
+                    'status': session.status
+                },
+                'message': 'Analysis generated successfully but not saved'
+            }, status=status.HTTP_200_OK)
         
         return Response({
             'bcba_analysis': bcba_analysis,
