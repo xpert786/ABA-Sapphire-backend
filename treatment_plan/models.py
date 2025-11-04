@@ -130,7 +130,7 @@ class TreatmentGoal(models.Model):
     
     treatment_plan = models.ForeignKey(TreatmentPlan, on_delete=models.CASCADE, related_name='goals')
     goal_description = models.TextField(help_text="Detailed description of the goal")
-    mastery_criteria = models.CharField(max_length=50, choices=MASTERY_CRITERIA_CHOICES, help_text="Criteria for goal mastery")
+    mastery_criteria = models.CharField(max_length=250, choices=MASTERY_CRITERIA_CHOICES, help_text="Criteria for goal mastery")
     custom_mastery_criteria = models.TextField(blank=True, null=True, help_text="Custom mastery criteria if 'custom' is selected")
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
     
