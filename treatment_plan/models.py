@@ -34,7 +34,7 @@ class TreatmentPlan(models.Model):
     
     # Basic Information
     client_name = models.CharField(max_length=255, help_text="Name of the client")
-    client_id = models.CharField(max_length=100, unique=True, help_text="Unique client identifier")
+    client_id = models.CharField(max_length=100, help_text="Client identifier (allows multiple plans per client)")
     bcba = models.ForeignKey(User, on_delete=models.CASCADE, related_name='treatment_plans', help_text="BCBA creating the plan")
     plan_type = models.CharField(max_length=50, choices=PLAN_TYPE_CHOICES, default='comprehensive_aba', help_text="Type of treatment plan")
     
