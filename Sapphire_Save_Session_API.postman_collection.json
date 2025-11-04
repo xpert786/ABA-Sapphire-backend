@@ -1,0 +1,368 @@
+{
+	"info": {
+		"_postman_id": "sapphire-save-session-api",
+		"name": "Sapphire Save Session & Generate Notes API",
+		"description": "Postman collection for Sapphire Session Management API - Save session data and generate AI notes",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token\", jsonData.access);",
+									"    pm.environment.set(\"refresh_token\", jsonData.refresh);",
+									"    console.log(\"Access token saved to environment\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"your_username\",\n    \"password\": \"your_password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/login/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"login",
+								""
+							]
+						},
+						"description": "Login to get JWT access and refresh tokens. The access token will be automatically saved to environment variables."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Session Management",
+			"item": [
+				{
+					"name": "Save Session Data and Generate Notes (Full Example)",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"// Ensure token is set",
+									"if (!pm.environment.get(\"access_token\")) {",
+									"    console.log(\"Warning: No access token found. Please run Login request first.\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"auto_save\": true,\n    \"pre_session\": [\n        \"materials_prepared\",\n        \"treatment_plan_reviewed\",\n        \"environment_setup\",\n        \"data_collection_sheets\"\n    ],\n    \"activities\": [\n        {\n            \"name\": \"Picture Naming\",\n            \"duration\": 15,\n            \"description\": \"Client practiced naming common household objects using picture cards\",\n            \"response\": \"Good engagement, responded well to prompts with 85% accuracy\"\n        },\n        {\n            \"name\": \"Turn-Taking Game\",\n            \"duration\": 10,\n            \"description\": \"Board game activity to practice waiting and social skills\",\n            \"response\": \"Required some prompting but completed successfully\"\n        }\n    ],\n    \"goals\": [\n        {\n            \"goal\": \"Requesting - Manding for preferred items\",\n            \"target\": \"Independently request 5 preferred items using 2-3 word phrases\",\n            \"trials\": 20,\n            \"successes\": 17,\n            \"percentage\": 85.0,\n            \"notes\": \"Client showed improvement in spontaneous requesting. Minimal prompting needed for familiar items.\"\n        },\n        {\n            \"goal\": \"Social Skills - Turn Taking\",\n            \"target\": \"Wait for turn appropriately during games without prompting\",\n            \"trials\": 15,\n            \"successes\": 12,\n            \"percentage\": 80.0,\n            \"notes\": \"Good progress. Client waited appropriately most of the time. 3 instances required verbal reminder.\"\n        }\n    ],\n    \"abc_events\": [\n        {\n            \"time\": \"14:30:00\",\n            \"antecedent\": \"Transition from preferred activity (iPad) to less preferred activity (worksheets)\",\n            \"behavior\": \"Verbal protest ('No!'), pushed materials away, brief non-compliance lasting 5 seconds\",\n            \"consequence\": \"Implemented first-then visual strategy. Provided choice of worksheet. Client complied after 10 seconds.\",\n            \"notes\": \"Behavior was brief and manageable. First-then strategy effective.\"\n        }\n    ],\n    \"reinforcement_strategies\": [\n        {\n            \"type\": \"Token Economy\",\n            \"description\": \"Token board with 5 tokens. Client earns one token for each completed task. Full board exchanges for 5 minutes of preferred activity (iPad).\",\n            \"effectiveness\": 5,\n            \"notes\": \"Highly effective throughout session. Client remained motivated and on-task.\"\n        },\n        {\n            \"type\": \"Social Praise\",\n            \"description\": \"Verbal praise and high-fives provided for appropriate behaviors and task completion\",\n            \"effectiveness\": 4,\n            \"notes\": \"Effective when paired with tangible reinforcement. Less effective alone.\"\n        }\n    ],\n    \"incidents\": [],\n    \"checklist\": {\n        \"materials_ready\": true,\n        \"environment_prepared\": true,\n        \"reviewed_goals\": true,\n        \"notes\": \"All materials prepared. Quiet environment maintained throughout session.\"\n    }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/session/sessions/{{session_id}}/save-and-generate-notes/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"session",
+								"sessions",
+								"{{session_id}}",
+								"save-and-generate-notes",
+								""
+							]
+						},
+						"description": "Complete example with all fields:\n- **auto_save**: Automatically save generated AI notes to session\n- **pre_session**: Array of checklist items (array format)\n- **activities**: Array of activity objects with name, duration, description, response\n- **goals**: Array of goal objects with goal, target, trials, successes, percentage, notes\n- **abc_events**: Array of ABC events with time, antecedent, behavior, consequence, notes\n- **reinforcement_strategies**: Array of strategy objects with type, description, effectiveness, notes\n- **incidents**: Array of incident objects (empty in this example)\n- **checklist**: Object format with materials_ready, environment_prepared, reviewed_goals, notes\n\nAll fields are optional. The endpoint will save provided data and generate AI notes."
+					},
+					"response": []
+				},
+				{
+					"name": "Save Session - Minimal Example",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"activities\": [\n        {\n            \"name\": \"Activity 1\",\n            \"duration\": 10,\n            \"description\": \"Description of activity\",\n            \"response\": \"Client response\"\n        }\n    ],\n    \"goals\": [\n        {\n            \"goal\": \"Goal description\",\n            \"target\": \"Target behavior\",\n            \"trials\": 5,\n            \"successes\": 4,\n            \"percentage\": 80,\n            \"notes\": \"Progress notes\"\n        }\n    ],\n    \"auto_save\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/session/sessions/{{session_id}}/save-and-generate-notes/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"session",
+								"sessions",
+								"{{session_id}}",
+								"save-and-generate-notes",
+								""
+							]
+						},
+						"description": "Minimal example with only activities and goals"
+					},
+					"response": []
+				},
+				{
+					"name": "Save Session - ABC Events with Time",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"abc_events\": [\n        {\n            \"time\": \"14:30:00\",\n            \"antecedent\": \"Asked client to sit down\",\n            \"behavior\": \"Client sat immediately\",\n            \"consequence\": \"Provided verbal praise and token\",\n            \"notes\": \"Positive behavior observed\"\n        },\n        {\n            \"time\": \"14:45:00\",\n            \"antecedent\": \"Transition from preferred activity\",\n            \"behavior\": \"Brief resistance, then complied\",\n            \"consequence\": \"Used first-then strategy, client complied\",\n            \"notes\": \"Strategy was effective\"\n        }\n    ],\n    \"auto_save\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/session/sessions/{{session_id}}/save-and-generate-notes/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"session",
+								"sessions",
+								"{{session_id}}",
+								"save-and-generate-notes",
+								""
+							]
+						},
+						"description": "Example showing ABC events with time field. Time format: \"HH:MM:SS\" or \"HH:MM\""
+					},
+					"response": []
+				},
+				{
+					"name": "Save Session - Pre-Session Checklist (Array)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"pre_session\": [\n        \"materials_prepared\",\n        \"treatment_plan_reviewed\",\n        \"environment_setup\",\n        \"data_collection_sheets\"\n    ],\n    \"auto_save\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/session/sessions/{{session_id}}/save-and-generate-notes/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"session",
+								"sessions",
+								"{{session_id}}",
+								"save-and-generate-notes",
+								""
+							]
+						},
+						"description": "Pre-session checklist using array format"
+					},
+					"response": []
+				},
+				{
+					"name": "Save Session - Checklist (Object Format)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"checklist\": {\n        \"materials_ready\": true,\n        \"environment_prepared\": true,\n        \"reviewed_goals\": true,\n        \"data_collection_ready\": true,\n        \"notes\": \"All materials prepared. Quiet environment maintained throughout session.\"\n    },\n    \"auto_save\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/session/sessions/{{session_id}}/save-and-generate-notes/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"session",
+								"sessions",
+								"{{session_id}}",
+								"save-and-generate-notes",
+								""
+							]
+						},
+						"description": "Checklist using object format with materials_ready, environment_prepared, reviewed_goals, etc."
+					},
+					"response": []
+				},
+				{
+					"name": "Save Session - With Incidents",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"activities\": [\n        {\n            \"name\": \"Activity Name\",\n            \"duration\": 15,\n            \"description\": \"Activity description\",\n            \"response\": \"Client response\"\n        }\n    ],\n    \"incidents\": [\n        {\n            \"type\": \"minor_disruption\",\n            \"severity\": \"low\",\n            \"duration\": 2,\n            \"description\": \"Brief moment of inattention, quickly redirected\"\n        },\n        {\n            \"type\": \"aggression\",\n            \"severity\": \"moderate\",\n            \"duration\": 5,\n            \"description\": \"Physical aggression observed, intervention applied\"\n        }\n    ],\n    \"auto_save\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/session/sessions/{{session_id}}/save-and-generate-notes/",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"session",
+								"sessions",
+								"{{session_id}}",
+								"save-and-generate-notes",
+								""
+							]
+						},
+						"description": "Example with incidents. Incident types: sib, aggression, elopement, major_disruption, minor_disruption, odr, ir, crisis. Severity: low, moderate, high, critical."
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://192.168.0.146:8000",
+			"type": "string"
+		},
+		{
+			"key": "session_id",
+			"value": "2",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
+

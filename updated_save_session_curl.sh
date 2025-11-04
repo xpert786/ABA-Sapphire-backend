@@ -1,0 +1,96 @@
+# Updated Curl Command for Save Session Data and Generate Notes
+# Includes assessment_summary with assessment_tools array format
+
+curl --location 'http://168.231.121.7/sapphire/session/sessions/55/save-and-generate-notes/' \
+--header 'Content-Type: application/json' \
+--header 'Authorization: Bearer YOUR_ACCESS_TOKEN_HERE' \
+--data '{
+    "auto_save": true,
+    "pre_session": [
+        "materials_prepared",
+        "treatment_plan_reviewed",
+        "environment_setup",
+        "data_collection_sheets"
+    ],
+    "assessment_summary": [{
+        "assessment_tools": ["VB-MAPP", "FBA", "Clinical Observation"],
+        "client_strengths": "To be determined through session",
+        "areas_of_need": "To be identified during session"
+    }],
+    "activities": [
+        {
+            "name": "Picture Naming",
+            "duration": 15,
+            "description": "Client practiced naming common household objects using picture cards",
+            "response": "Good engagement, responded well to prompts with 85% accuracy"
+        },
+        {
+            "name": "Turn-Taking Game",
+            "duration": 10,
+            "description": "Board game activity to practice waiting and social skills",
+            "response": "Required some prompting but completed successfully"
+        }
+    ],
+    "goals": [
+        {
+            "goal": "Requesting - Manding for preferred items",
+            "target": "Independently request 5 preferred items using 2-3 word phrases",
+            "trials": 20,
+            "successes": 17,
+            "percentage": 85.0,
+            "notes": "Client showed improvement in spontaneous requesting. Minimal prompting needed for familiar items."
+        },
+        {
+            "goal": "Social Skills - Turn Taking",
+            "target": "Wait for turn appropriately during games without prompting",
+            "trials": 15,
+            "successes": 12,
+            "percentage": 80.0,
+            "notes": "Good progress. Client waited appropriately most of the time. 3 instances required verbal reminder."
+        }
+    ],
+    "abc_events": [
+        {
+            "time": "14:30:00",
+            "antecedent": "Transition from preferred activity (iPad) to less preferred activity (worksheets)",
+            "behavior": "Verbal protest ('No!'), pushed materials away, brief non-compliance lasting 5 seconds",
+            "consequence": "Implemented first-then visual strategy. Provided choice of worksheet. Client complied after 10 seconds.",
+            "notes": "Behavior was brief and manageable. First-then strategy effective."
+        }
+    ],
+    "reinforcement_strategies": [
+        {
+            "type": "Token Economy",
+            "description": "Token board with 5 tokens. Client earns one token for each completed task. Full board exchanges for 5 minutes of preferred activity (iPad).",
+            "effectiveness": 5,
+            "notes": "Highly effective throughout session. Client remained motivated and on-task."
+        },
+        {
+            "type": "Social Praise",
+            "description": "Verbal praise and high-fives provided for appropriate behaviors and task completion",
+            "effectiveness": 4,
+            "notes": "Effective when paired with tangible reinforcement. Less effective alone."
+        }
+    ],
+    "incidents": [
+        {
+            "type": "minor_disruption",
+            "severity": "low",
+            "duration": 2,
+            "description": "Brief moment of inattention, quickly redirected"
+        },
+        {
+            "type": "aggression",
+            "severity": "moderate",
+            "duration": 5,
+            "description": "Physical aggression observed, intervention applied"
+        }
+    ],
+    "checklist": {
+        "materials_ready": true,
+        "environment_prepared": true,
+        "reviewed_goals": true,
+        "notes": "All materials prepared. Quiet environment maintained throughout session."
+    }
+}'
+

@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import ChatMessage, Alert, SessionPrompt, SessionNoteFlow, SkillProgress, Milestone, ProgressMonitoring
 from .serializers import ChatMessageSerializer, AlertSerializer, SessionPromptSerializer, SessionNoteFlowSerializer, SkillProgressSerializer, ProgressMonitoringSerializer
-from .utils import generate_ai_response, generate_ai_response_with_db_context
+from .utils import generate_ai_response, generate_ai_response_with_db_context, generate_session_notes
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta, datetime
@@ -35,7 +35,7 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
         # Create chat instance but do not save yet
         chat = ChatMessage(user=request.user, message=message_text)
 
-        # Generate AI response with database context
+        # Generate AI response with database context (includes business overview for admin)
         ai_response = generate_ai_response_with_db_context(message_text, request.user)
         print("DEBUG AI response:", ai_response)  # check console
 
@@ -43,6 +43,26 @@ class ChatMessageViewSet(viewsets.ModelViewSet):
         chat.save()  # save after assigning response
 
         return Response(ChatMessageSerializer(chat).data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=False, methods=['get'])
+    def business_overview(self, request):
+        """
+        Get business overview data for admin users.
+        Returns comprehensive business insights filtered by user involvement.
+        """
+        user = request.user
+        
+        # Check if user is admin
+        if not user.role or user.role.name not in ['Admin', 'Superadmin']:
+            return Response({
+                "error": "This endpoint is only available for Admin and Superadmin users"
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Get business overview data
+        from .utils import build_business_overview_context
+        overview_data = build_business_overview_context(user)
+        
+        return Response(overview_data, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['get'])
     def context(self, request):

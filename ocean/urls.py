@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import ChatMessageViewSet, AlertViewSet, SessionPromptViewSet, SessionNoteFlowViewSet, get_client_progress_monitoring
 
 router = DefaultRouter()
+router.register(r'chat-messages', ChatMessageViewSet, basename="chat-messages")
 router.register(r'session-prompts', SessionPromptViewSet, basename="session-prompts")
 router.register(r'session-notes', SessionNoteFlowViewSet, basename="session-notes")
 

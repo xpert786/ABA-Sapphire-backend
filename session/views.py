@@ -752,9 +752,44 @@ def get_session_details(request, session_id):
     
     # Serialize the session with all details
     serializer = SessionDetailSerializer(session)
+    session_data = serializer.data
+    
+    # Get assessment_tools from treatment plan if available
+    try:
+        from treatment_plan.models import TreatmentPlan
+        treatment_plan = TreatmentPlan.objects.filter(
+            client_id=str(session.client.id)
+        ).order_by('-created_at').first()
+        
+        if treatment_plan:
+            # Get assessment_tools array (only checked/selected tools)
+            if hasattr(treatment_plan, 'assessment_tools') and treatment_plan.assessment_tools:
+                if hasattr(treatment_plan, 'get_assessment_tools_list'):
+                    assessment_tools_array = treatment_plan.get_assessment_tools_list()
+                else:
+                    assessment_tools_array = treatment_plan.assessment_tools if isinstance(treatment_plan.assessment_tools, list) else []
+            else:
+                assessment_tools_array = []
+            
+            session_data['assessment_tools'] = treatment_plan.assessment_tools_used
+            session_data['assessment_tools_array'] = assessment_tools_array
+            session_data['assessment_summary'] = {
+                'assessment_tools_used': treatment_plan.assessment_tools_used or '',
+                'assessment_tools': assessment_tools_array,
+                'client_strengths': treatment_plan.client_strengths or '',
+                'areas_of_need': treatment_plan.areas_of_need or ''
+            }
+        else:
+            session_data['assessment_tools'] = None
+            session_data['assessment_tools_array'] = []
+            session_data['assessment_summary'] = None
+    except Exception:
+        session_data['assessment_tools'] = None
+        session_data['assessment_tools_array'] = []
+        session_data['assessment_summary'] = None
     
     return Response({
-        'session': serializer.data,
+        'session': session_data,
         'message': f'Details for session {session_id}'
     })
 
@@ -2603,6 +2638,103 @@ def save_session_data_and_generate_notes(request, session_id):
         if checklist_saved:
             saved_data['checklist'] = f"{len(checklist_saved)} checklist items saved"
     
+    # Save assessment_summary
+    if 'assessment_summary' in request_data:
+        assessment_summary_data = request_data['assessment_summary']
+        if isinstance(assessment_summary_data, list) and len(assessment_summary_data) > 0:
+            # Get first assessment summary item
+            assessment_data = assessment_summary_data[0]
+        elif isinstance(assessment_summary_data, dict):
+            assessment_data = assessment_summary_data
+        else:
+            assessment_data = {}
+        
+        # Get treatment plan to validate assessment tools
+        try:
+            from treatment_plan.models import TreatmentPlan
+            treatment_plan = TreatmentPlan.objects.filter(
+                client_id=str(session.client.id)
+            ).order_by('-created_at').first()
+            
+            # Get available assessment tools from treatment plan
+            available_tools = []
+            if treatment_plan:
+                # Get assessment tools array from treatment plan
+                if hasattr(treatment_plan, 'assessment_tools') and treatment_plan.assessment_tools:
+                    available_tools = treatment_plan.get_assessment_tools_list() if hasattr(treatment_plan, 'get_assessment_tools_list') else (treatment_plan.assessment_tools if isinstance(treatment_plan.assessment_tools, list) else [])
+            
+            # Get checked assessment tools from request
+            checked_tools = []
+            if 'assessment_tools' in assessment_data:
+                # If assessment_tools is provided as array of checked tools
+                checked_tools = assessment_data.get('assessment_tools', [])
+                if isinstance(checked_tools, str):
+                    # If it's a string, try to parse it
+                    try:
+                        import json
+                        checked_tools = json.loads(checked_tools)
+                    except:
+                        checked_tools = [checked_tools] if checked_tools else []
+            elif 'assessment_tools_used' in assessment_data:
+                # If assessment_tools_used is provided as text, extract tools
+                assessment_tools_used_text = assessment_data.get('assessment_tools_used', '')
+                if assessment_tools_used_text:
+                    # Try to parse as comma-separated or use as-is
+                    checked_tools = [tool.strip() for tool in assessment_tools_used_text.split(',') if tool.strip()]
+            
+            # Filter: Only save tools that exist in treatment plan's available tools
+            if available_tools and checked_tools:
+                # Only keep tools that are in the available tools list
+                validated_tools = [tool for tool in checked_tools if tool in available_tools]
+            else:
+                # If no treatment plan or no available tools, use all checked tools
+                validated_tools = checked_tools
+            
+            # Get other fields
+            client_strengths = assessment_data.get('client_strengths', '')
+            areas_of_need = assessment_data.get('areas_of_need', '')
+            
+            # Format assessment tools as text
+            assessment_tools_text = ', '.join(validated_tools) if validated_tools else ''
+            
+            if validated_tools or client_strengths or areas_of_need:
+                assessment_note = f"""Assessment Summary:
+- Assessment Tools Used: {assessment_tools_text}
+- Client Strengths: {client_strengths}
+- Areas of Need: {areas_of_need}"""
+                
+                # Create a session note for assessment summary
+                SessionNote.objects.create(
+                    session=session,
+                    note_content=assessment_note,
+                    note_type='assessment_summary'
+                )
+                
+                # Update treatment plan with validated/checked tools only
+                if treatment_plan:
+                    # Update assessment_tools array with only checked tools
+                    if validated_tools:
+                        treatment_plan.set_assessment_tools_list(validated_tools) if hasattr(treatment_plan, 'set_assessment_tools_list') else setattr(treatment_plan, 'assessment_tools', validated_tools)
+                        treatment_plan.assessment_tools_used = assessment_tools_text
+                    
+                    # Update client strengths if provided
+                    if client_strengths:
+                        treatment_plan.client_strengths = client_strengths
+                    
+                    # Update areas of need if provided
+                    if areas_of_need:
+                        treatment_plan.areas_of_need = areas_of_need
+                    
+                    treatment_plan.save()
+                
+                saved_data['assessment_summary'] = f"Assessment summary saved with {len(validated_tools)} validated tools"
+            else:
+                saved_data['assessment_summary'] = "No valid assessment data to save"
+                
+        except Exception as e:
+            # If updating treatment plan fails, continue anyway
+            saved_data['assessment_summary'] = f"Error saving assessment summary: {str(e)}"
+    
     # Now generate AI notes using the saved data
     try:
         from ocean.utils import generate_session_notes
@@ -2670,6 +2802,31 @@ def save_session_data_and_generate_notes(request, session_id):
             }
             for i in session.incidents.all()
         ]
+        
+        # Get assessment summary from session notes
+        assessment_notes = session.notes.filter(note_type='assessment_summary')
+        if assessment_notes.exists():
+            assessment_note_content = assessment_notes.first().note_content
+            # Parse assessment note to extract structured data
+            session_data['assessment_summary'] = assessment_note_content
+        else:
+            # Try to get from treatment plan
+            try:
+                from treatment_plan.models import TreatmentPlan
+                treatment_plan = TreatmentPlan.objects.filter(
+                    client_id=str(session.client.id)
+                ).order_by('-created_at').first()
+                
+                if treatment_plan:
+                    session_data['assessment_summary'] = {
+                        'assessment_tools_used': treatment_plan.assessment_tools_used or '',
+                        'client_strengths': treatment_plan.client_strengths or '',
+                        'areas_of_need': treatment_plan.areas_of_need or ''
+                    }
+                else:
+                    session_data['assessment_summary'] = None
+            except Exception:
+                session_data['assessment_summary'] = None
         
         # Generate AI notes
         ai_notes = generate_session_notes(session_data)
