@@ -424,8 +424,11 @@ def get_client_progress_monitoring(request, client_id):
             attendance_rate = 0.00
         
         # 2. Calculate Goal Achievement Rate
-        completed_session_ids = sessions_qs.filter(status='completed').values_list('id', flat=True)
-        goal_progress_qs = GoalProgress.objects.filter(session_id__in=completed_session_ids)
+        completed_session_ids = list(sessions_qs.filter(status='completed').values_list('id', flat=True))
+        goal_progress_qs = GoalProgress.objects.filter(
+            session_id__in=completed_session_ids,
+            session__client=client  # Ensure we only count this client's goals
+        )
         
         total_goals = goal_progress_qs.count()
         met_goals = goal_progress_qs.filter(is_met=True).count()
@@ -516,6 +519,9 @@ def get_client_progress_monitoring(request, client_id):
         if treatment_plan_id:
             treatment_plans = treatment_plans.filter(id=treatment_plan_id)
         
+        # Debug: Count treatment plans found
+        treatment_plans_count = treatment_plans.count()
+        
         # Map skill categories from screenshot
         skill_category_mapping = {
             'communication': 'Communication Skills',
@@ -527,41 +533,120 @@ def get_client_progress_monitoring(request, client_id):
         # Get goals from treatment plans
         treatment_goals = TreatmentGoal.objects.filter(treatment_plan__in=treatment_plans)
         
+        # Get all GoalProgress records from completed sessions in the period
+        # This is the actual progress data from sessions - filter by client to ensure accuracy
+        session_goal_progress = GoalProgress.objects.filter(
+            session_id__in=completed_session_ids,
+            session__client=client
+        ).select_related('session')
+        
+        # Debug counts
+        total_treatment_goals = treatment_goals.count()
+        total_session_goals = session_goal_progress.count()
+        met_session_goals = session_goal_progress.filter(is_met=True).count()
+        
         # Group goals by skill category (infer from goal description)
         skill_progress_map = defaultdict(lambda: {
             'goals': [],
             'met_goals': 0,
             'total_goals': 0,
+            'session_met_goals': 0,
+            'session_total_goals': 0,
             'milestones': []
         })
         
-        # Categorize goals based on keywords in description
+        # First, categorize treatment goals and build a mapping for better matching
+        treatment_goal_categories = {}  # Map goal description to category
         for goal in treatment_goals:
             desc_lower = goal.goal_description.lower()
             category = None
             
-            if any(word in desc_lower for word in ['communication', 'verbal', 'speech', 'language', 'request', 'sentence', 'please', 'thank']):
+            if any(word in desc_lower for word in ['communication', 'verbal', 'speech', 'language', 'request', 'sentence', 'please', 'thank', 'say', 'talk', 'word', 'express']):
                 category = 'communication'
-            elif any(word in desc_lower for word in ['social', 'interaction', 'peer', 'play', 'share', 'cooperate']):
+            elif any(word in desc_lower for word in ['social', 'interaction', 'peer', 'play', 'share', 'cooperate', 'friend', 'group', 'together']):
                 category = 'social_interaction'
-            elif any(word in desc_lower for word in ['behavior', 'incident', 'challenging', 'coping', 'strategy', 'intervention']):
+            elif any(word in desc_lower for word in ['behavior', 'incident', 'challenging', 'coping', 'strategy', 'intervention', 'aggression', 'tantrum', 'self-injury', 'calm', 'regulation']):
                 category = 'behavior_management'
-            elif any(word in desc_lower for word in ['academic', 'math', 'reading', 'puzzle', 'sight word', 'comprehension']):
+            elif any(word in desc_lower for word in ['academic', 'math', 'reading', 'puzzle', 'sight word', 'comprehension', 'number', 'letter', 'count', 'write', 'spell']):
                 category = 'academic_skills'
             else:
                 category = 'communication'  # Default
             
             skill_progress_map[category]['goals'].append(goal)
             skill_progress_map[category]['total_goals'] += 1
-            if goal.is_achieved:
-                skill_progress_map[category]['met_goals'] += 1
+            # Store mapping for session goal matching
+            treatment_goal_categories[goal.goal_description.lower()] = category
+        
+        # Now calculate actual progress from session GoalProgress records
+        # Match session goals to treatment goals by description similarity
+        for gp in session_goal_progress:
+            desc_lower = gp.goal_description.lower()
+            category = None
+            
+            # First, try exact match with treatment goal descriptions
+            if desc_lower in treatment_goal_categories:
+                category = treatment_goal_categories[desc_lower]
+            else:
+                # Try keyword matching (same logic as treatment goals)
+                if any(word in desc_lower for word in ['communication', 'verbal', 'speech', 'language', 'request', 'sentence', 'please', 'thank', 'say', 'talk', 'word', 'express', 'tell', 'ask']):
+                    category = 'communication'
+                elif any(word in desc_lower for word in ['social', 'interaction', 'peer', 'play', 'share', 'cooperate', 'friend', 'group', 'together', 'join']):
+                    category = 'social_interaction'
+                elif any(word in desc_lower for word in ['behavior', 'incident', 'challenging', 'coping', 'strategy', 'intervention', 'aggression', 'tantrum', 'self-injury', 'calm', 'regulation', 'meltdown']):
+                    category = 'behavior_management'
+                elif any(word in desc_lower for word in ['academic', 'math', 'reading', 'puzzle', 'sight word', 'comprehension', 'number', 'letter', 'count', 'write', 'spell', 'read']):
+                    category = 'academic_skills'
+                else:
+                    # If no keyword match, try to match to a treatment goal by description similarity
+                    # Find the best matching treatment goal
+                    best_match_category = None
+                    best_match_score = 0
+                    
+                    for tg in treatment_goals:
+                        tg_desc_lower = tg.goal_description.lower()
+                        # Simple word overlap matching (more lenient)
+                        gp_words = set(desc_lower.split())
+                        tg_words = set(tg_desc_lower.split())
+                        # Remove common stop words
+                        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'being'}
+                        gp_words = gp_words - stop_words
+                        tg_words = tg_words - stop_words
+                        common_words = gp_words.intersection(tg_words)
+                        if len(common_words) > best_match_score and len(common_words) >= 1:  # More lenient: at least 1 common word
+                            best_match_score = len(common_words)
+                            # Get category from treatment goal
+                            if tg_desc_lower in treatment_goal_categories:
+                                best_match_category = treatment_goal_categories[tg_desc_lower]
+                            else:
+                                # Determine category for this treatment goal
+                                if any(word in tg_desc_lower for word in ['communication', 'verbal', 'speech', 'language', 'request', 'sentence']):
+                                    best_match_category = 'communication'
+                                elif any(word in tg_desc_lower for word in ['social', 'interaction', 'peer', 'play']):
+                                    best_match_category = 'social_interaction'
+                                elif any(word in tg_desc_lower for word in ['behavior', 'incident', 'challenging', 'coping']):
+                                    best_match_category = 'behavior_management'
+                                elif any(word in tg_desc_lower for word in ['academic', 'math', 'reading', 'puzzle']):
+                                    best_match_category = 'academic_skills'
+                                else:
+                                    best_match_category = 'communication'
+                    
+                    category = best_match_category or 'communication'  # Default to communication
+            
+            # Always assign to a category (even if it's default)
+            if not category:
+                category = 'communication'
+            
+            skill_progress_map[category]['session_total_goals'] += 1
+            if gp.is_met:
+                skill_progress_map[category]['session_met_goals'] += 1
         
         # Get recent milestones from GoalProgress for completed sessions
         recent_milestones_by_category = defaultdict(list)
         recent_goal_progress = GoalProgress.objects.filter(
             session_id__in=completed_session_ids,
+            session__client=client,  # Ensure we only get this client's goals
             is_met=True
-        ).order_by('-session__session_date')[:20]  # Get last 20 met goals
+        ).select_related('session').order_by('-session__session_date')[:20]  # Get last 20 met goals
         
         for gp in recent_goal_progress:
             desc_lower = gp.goal_description.lower()
@@ -588,13 +673,32 @@ def get_client_progress_monitoring(request, client_id):
         skill_progress_data = []
         for category_key, category_display in skill_category_mapping.items():
             skill_data = skill_progress_map[category_key]
-            total = skill_data['total_goals']
-            met = skill_data['met_goals']
             
             # Calculate progress percentage
-            if total > 0:
-                progress_pct = (met / total) * 100
+            # Priority: Use session GoalProgress data (actual session performance) > TreatmentGoal.is_achieved
+            # But also check if we have treatment goals but no session data yet
+            if skill_data['session_total_goals'] > 0:
+                # Use actual session progress data (most accurate)
+                total = skill_data['session_total_goals']
+                met = skill_data['session_met_goals']
+                progress_pct = (met / total) * 100 if total > 0 else 0.0
+            elif skill_data['total_goals'] > 0:
+                # Fallback: If we have treatment goals but no session data yet, 
+                # check if any goals are marked as achieved
+                total = skill_data['total_goals']
+                # Count achieved treatment goals
+                achieved_count = sum(1 for goal in skill_data['goals'] if goal.is_achieved)
+                if achieved_count > 0:
+                    # If some goals are achieved, show progress
+                    progress_pct = (achieved_count / total) * 100
+                    met = achieved_count
+                else:
+                    # No goals achieved yet, but we have goals - show 0% but indicate goals exist
+                    progress_pct = 0.0
+                    met = 0
             else:
+                total = 0
+                met = 0
                 progress_pct = 0.0
             
             # Generate description based on progress
@@ -624,8 +728,10 @@ def get_client_progress_monitoring(request, client_id):
                 'category_display': category_display,
                 'description': desc,
                 'progress_percentage': float(round(progress_pct, 0)),
-                'total_goals': total,
-                'met_goals': met,
+                'total_goals': skill_data['total_goals'],  # Total treatment goals
+                'met_goals': int(met),  # Met goals from sessions or treatment goals
+                'session_total_goals': skill_data['session_total_goals'],  # Total session goal attempts
+                'session_met_goals': skill_data['session_met_goals'],  # Met session goals
                 'recent_milestones': milestones[:2]  # Limit to 2 milestones
             })
         
@@ -698,6 +804,14 @@ def get_client_progress_monitoring(request, client_id):
                 }
             },
             'skill_progress': skill_progress_data,
+            'debug_info': {
+                'treatment_plans_found': treatment_plans_count,
+                'total_treatment_goals': total_treatment_goals,
+                'total_session_goals': total_session_goals,
+                'met_session_goals': met_session_goals,
+                'completed_sessions_count': len(completed_session_ids),
+                'note': 'Progress is calculated from session GoalProgress records. If showing 0%, check if goals have is_met=True in completed sessions.'
+            },
             'calculated_at': timezone.now().isoformat()
         }
         
