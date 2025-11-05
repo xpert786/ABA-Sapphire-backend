@@ -22,7 +22,8 @@ from .views import (
     CertificateDetailView,
     UserCertificatesView,
     BusinessInsightsKPIView,
-    AdminDashboardView
+    AdminDashboardView,
+    ClientDashboardView
 )
 
 urlpatterns = [
@@ -54,4 +55,7 @@ urlpatterns = [
     
     # Admin Dashboard
     path('admin/dashboard/', AdminDashboardView.as_view(), name='admin-dashboard'),
+    
+    # Client Dashboard
+    path('client/dashboard/', ClientDashboardView.as_view(), name='client-dashboard'),
 ]

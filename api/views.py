@@ -923,3 +923,399 @@ class AdminDashboardView(APIView):
                 'traceback': traceback.format_exc(),
                 'message': 'Failed to retrieve admin dashboard data'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ClientDashboardView(APIView):
+    """
+    API endpoint for client dashboard data
+    Returns all dashboard information including:
+    - Welcome section
+    - Next Appointment
+    - Last Session Summary
+    - Progress Report Status
+    - Session Attendance Overview
+    - Treatment Plan
+    - Overall Progress
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            user = request.user
+            
+            # Check if user is a client
+            if not hasattr(user, 'role') or not user.role:
+                return Response({
+                    'error': 'User role not found'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            
+            # Only clients can access their own dashboard
+            if role_name != 'Clients/Parent':
+                return Response({
+                    'error': 'This endpoint is only available for clients'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            client = user
+            
+            # Import models
+            from session.models import Session as TherapySession, GoalProgress, Activity, Incident
+            from scheduler.models import Session as SchedulerSession
+            from treatment_plan.models import TreatmentPlan, TreatmentGoal
+            from django.db.models import Q, Count, Case, When, IntegerField
+            from datetime import datetime, timedelta
+            from django.utils import timezone as tz
+            
+            today = tz.now().date()
+            now = tz.now()
+            
+            # 1. WELCOME SECTION
+            welcome_data = {
+                'client_name': client.name or client.get_full_name() or client.username,
+                'subtitle': "Here's An Overview Of Your Child's ABA Therapy Journey."
+            }
+            
+            # 2. NEXT APPOINTMENT
+            # Check both scheduler sessions and therapy sessions
+            next_appointment = None
+            try:
+                # First try scheduler sessions (scheduled appointments)
+                scheduler_session = SchedulerSession.objects.filter(
+                    client=client,
+                    session_date__gte=today
+                ).order_by('session_date', 'start_time').first()
+                
+                if scheduler_session:
+                    # Format date and time
+                    session_datetime = datetime.combine(scheduler_session.session_date, scheduler_session.start_time)
+                    day_name = session_datetime.strftime('%a')
+                    formatted_date = session_datetime.strftime('%b %d')
+                    
+                    next_appointment = {
+                        'id': scheduler_session.id,
+                        'date': formatted_date,
+                        'day': day_name,
+                        'date_full': scheduler_session.session_date.isoformat(),
+                        'start_time': scheduler_session.start_time.strftime('%I:%M %p'),
+                        'end_time': scheduler_session.end_time.strftime('%I:%M %p'),
+                        'time_range': f"{scheduler_session.start_time.strftime('%I:%M %p')} - {scheduler_session.end_time.strftime('%I:%M %p')}",
+                        'therapist': scheduler_session.staff.name if scheduler_session.staff and hasattr(scheduler_session.staff, 'name') else (scheduler_session.staff.username if scheduler_session.staff else 'Not assigned'),
+                        'therapist_id': scheduler_session.staff.id if scheduler_session.staff else None,
+                        'session_type': 'scheduled'
+                    }
+                else:
+                    # Fallback to therapy sessions
+                    therapy_session = TherapySession.objects.filter(
+                        client=client,
+                        session_date__gte=today,
+                        status__in=['scheduled', 'in_progress']
+                    ).order_by('session_date', 'start_time').first()
+                    
+                    if therapy_session:
+                        session_datetime = datetime.combine(therapy_session.session_date, therapy_session.start_time)
+                        day_name = session_datetime.strftime('%a')
+                        formatted_date = session_datetime.strftime('%b %d')
+                        
+                        next_appointment = {
+                            'id': therapy_session.id,
+                            'date': formatted_date,
+                            'day': day_name,
+                            'date_full': therapy_session.session_date.isoformat(),
+                            'start_time': therapy_session.start_time.strftime('%I:%M %p'),
+                            'end_time': therapy_session.end_time.strftime('%I:%M %p'),
+                            'time_range': f"{therapy_session.start_time.strftime('%I:%M %p')} - {therapy_session.end_time.strftime('%I:%M %p')}",
+                            'therapist': therapy_session.staff.name if therapy_session.staff and hasattr(therapy_session.staff, 'name') else (therapy_session.staff.username if therapy_session.staff else 'Not assigned'),
+                            'therapist_id': therapy_session.staff.id if therapy_session.staff else None,
+                            'session_type': 'therapy'
+                        }
+            except Exception as e:
+                import logging
+                logging.error(f"Error fetching next appointment: {str(e)}")
+            
+            # 3. LAST SESSION SUMMARY
+            last_session_summary = None
+            try:
+                last_session = TherapySession.objects.filter(
+                    client=client,
+                    status='completed'
+                ).order_by('-session_date', '-start_time').first()
+                
+                if last_session:
+                    # Get activities from last session
+                    activities = Activity.objects.filter(session=last_session).values_list('activity_name', flat=True)
+                    activity_names = [a for a in activities if a]  # Filter out None/empty
+                    activity_summary = ', '.join(activity_names[:3]) if activity_names else 'Not specified'
+                    
+                    # Get goals met status
+                    goals = GoalProgress.objects.filter(session=last_session)
+                    total_goals = goals.count()
+                    met_goals = goals.filter(is_met=True).count()
+                    outcome = "Goal Completed" if met_goals > 0 else "In Progress"
+                    
+                    last_session_summary = {
+                        'id': last_session.id,
+                        'date': last_session.session_date.strftime('%b %d'),
+                        'date_full': last_session.session_date.isoformat(),
+                        'activity': activity_summary,
+                        'outcome': outcome,
+                        'goals_met': met_goals,
+                        'total_goals': total_goals
+                    }
+            except Exception as e:
+                import logging
+                logging.error(f"Error fetching last session summary: {str(e)}")
+            
+            # 4. PROGRESS REPORT STATUS
+            # Calculate progress report based on current quarter
+            progress_report = None
+            try:
+                # Determine current quarter
+                current_month = today.month
+                if current_month in [1, 2, 3]:
+                    quarter = 'Q1'
+                    quarter_start = datetime(today.year, 1, 1).date()
+                elif current_month in [4, 5, 6]:
+                    quarter = 'Q2'
+                    quarter_start = datetime(today.year, 4, 1).date()
+                elif current_month in [7, 8, 9]:
+                    quarter = 'Q3'
+                    quarter_start = datetime(today.year, 7, 1).date()
+                else:
+                    quarter = 'Q4'
+                    quarter_start = datetime(today.year, 10, 1).date()
+                
+                # Get treatment plans for this client
+                treatment_plans = TreatmentPlan.objects.filter(
+                    Q(client_id=str(client.id)) |
+                    Q(client_id=client.username) |
+                    Q(client_id=getattr(client, 'staff_id', '')) |
+                    Q(client_name__icontains=client.name if hasattr(client, 'name') and client.name else '')
+                )
+                
+                # Get goals from treatment plans
+                treatment_goals = TreatmentGoal.objects.filter(treatment_plan__in=treatment_plans)
+                total_goals = treatment_goals.count()
+                achieved_goals = treatment_goals.filter(is_achieved=True).count()
+                
+                # Get sessions in this quarter
+                quarter_sessions = TherapySession.objects.filter(
+                    client=client,
+                    session_date__gte=quarter_start,
+                    session_date__lte=today,
+                    status='completed'
+                )
+                
+                progress_report = {
+                    'report_name': f'Progress Report: {quarter}',
+                    'quarter': quarter,
+                    'status': 'Now Available',
+                    'goals_achieved': achieved_goals,
+                    'total_goals': total_goals,
+                    'goals_achieved_display': f'{achieved_goals}/{total_goals}',
+                    'sessions_in_quarter': quarter_sessions.count()
+                }
+            except Exception as e:
+                import logging
+                logging.error(f"Error calculating progress report: {str(e)}")
+            
+            # 5. SESSION ATTENDANCE OVERVIEW
+            attendance_overview = None
+            try:
+                # Get all sessions for this client
+                all_sessions = TherapySession.objects.filter(client=client)
+                total_sessions = all_sessions.count()
+                completed_sessions = all_sessions.filter(status='completed').count()
+                cancelled_sessions = all_sessions.filter(status='cancelled').count()
+                
+                # Calculate attended rate
+                attended_rate = (completed_sessions / total_sessions * 100) if total_sessions > 0 else 0
+                
+                # Get missed sessions (scheduled but not completed, excluding recent future ones)
+                missed_sessions = all_sessions.filter(
+                    status='cancelled',
+                    session_date__lt=today  # Only count past cancelled sessions as missed
+                ).count()
+                
+                # Cancellations with late notice (cancelled on the same day or after start time)
+                late_cancellations = all_sessions.filter(
+                    status='cancelled',
+                    session_date=today
+                ).count()
+                
+                attendance_overview = {
+                    'attended_rate': round(attended_rate, 0),
+                    'attended_rate_display': f'{int(round(attended_rate, 0))}%',
+                    'missed_sessions': missed_sessions,
+                    'missed_sessions_display': f'Missed: {missed_sessions} Sessions',
+                    'late_cancellations': late_cancellations,
+                    'late_cancellations_display': f'Cancellations With Late Notice: {late_cancellations}',
+                    'total_scheduled': total_sessions,
+                    'completed': completed_sessions,
+                    'cancelled': cancelled_sessions
+                }
+            except Exception as e:
+                import logging
+                logging.error(f"Error calculating attendance overview: {str(e)}")
+            
+            # 6. TREATMENT PLAN
+            treatment_plan_info = None
+            try:
+                # Get the most recent treatment plan
+                latest_plan = TreatmentPlan.objects.filter(
+                    Q(client_id=str(client.id)) |
+                    Q(client_id=client.username) |
+                    Q(client_id=getattr(client, 'staff_id', '')) |
+                    Q(client_name__icontains=client.name if hasattr(client, 'name') and client.name else '')
+                ).order_by('-created_at').first()
+                
+                if latest_plan:
+                    # Format plan name based on plan type and quarter
+                    plan_type_display = latest_plan.get_plan_type_display()
+                    plan_name = f"Plan: {plan_type_display}"
+                    
+                    # Try to extract quarter from name or use current
+                    if 'Q' in latest_plan.client_name:
+                        quarter_match = latest_plan.client_name.split('Q')[1].split()[0] if 'Q' in latest_plan.client_name else None
+                        if quarter_match:
+                            plan_name = f"Plan: Q{quarter_match} {plan_type_display}"
+                    
+                    treatment_plan_info = {
+                        'id': latest_plan.id,
+                        'plan_name': plan_name,
+                        'created_by': latest_plan.bcba.name if hasattr(latest_plan.bcba, 'name') else latest_plan.bcba.username,
+                        'created_by_id': latest_plan.bcba.id,
+                        'last_updated': latest_plan.updated_at.strftime('%B %d, %Y'),
+                        'last_updated_date': latest_plan.updated_at.date().isoformat(),
+                        'status': latest_plan.status,
+                        'plan_type': latest_plan.plan_type
+                    }
+            except Exception as e:
+                import logging
+                logging.error(f"Error fetching treatment plan: {str(e)}")
+            
+            # 7. OVERALL PROGRESS (Pie Chart Data)
+            overall_progress = None
+            try:
+                # Get treatment plans for this client (reuse from progress report section if available)
+                if 'treatment_plans' not in locals():
+                    treatment_plans = TreatmentPlan.objects.filter(
+                        Q(client_id=str(client.id)) |
+                        Q(client_id=client.username) |
+                        Q(client_id=getattr(client, 'staff_id', '')) |
+                        Q(client_name__icontains=client.name if hasattr(client, 'name') and client.name else '')
+                    )
+                
+                # Get treatment goals
+                treatment_goals = TreatmentGoal.objects.filter(treatment_plan__in=treatment_plans)
+                total_goals_count = treatment_goals.count()
+                achieved_goals_count = treatment_goals.filter(is_achieved=True).count()
+                in_progress_goals = total_goals_count - achieved_goals_count
+                
+                # Calculate Goal Mastery Rate (percentage of achieved goals)
+                goal_mastery_rate = (achieved_goals_count / total_goals_count * 100) if total_goals_count > 0 else 0
+                
+                # Calculate Behavior Improvement (from incidents reduction)
+                # Compare current period vs previous period
+                current_period_start = today - timedelta(days=30)
+                previous_period_start = current_period_start - timedelta(days=30)
+                
+                current_incidents = Incident.objects.filter(
+                    session__client=client,
+                    session__session_date__gte=current_period_start,
+                    session__session_date__lt=today
+                ).count()
+                
+                previous_incidents = Incident.objects.filter(
+                    session__client=client,
+                    session__session_date__gte=previous_period_start,
+                    session__session_date__lt=current_period_start
+                ).count()
+                
+                # Calculate improvement percentage
+                if previous_incidents > 0:
+                    behavior_improvement = ((previous_incidents - current_incidents) / previous_incidents * 100)
+                    behavior_improvement = max(0, behavior_improvement)  # Don't show negative
+                else:
+                    behavior_improvement = 0 if current_incidents == 0 else 0
+                
+                # Calculate pie chart segments
+                total_progress = goal_mastery_rate + behavior_improvement + (in_progress_goals * 10)  # Scale in_progress
+                if total_progress == 0:
+                    total_progress = 100  # Default to 100 for display
+                
+                goal_mastery_percentage = (goal_mastery_rate / total_progress * 100) if total_progress > 0 else 0
+                behavior_improvement_percentage = (behavior_improvement / total_progress * 100) if total_progress > 0 else 0
+                goals_in_progress_percentage = 100 - goal_mastery_percentage - behavior_improvement_percentage
+                
+                overall_progress = {
+                    'pie_chart': {
+                        'segments': [
+                            {
+                                'label': 'Goal Mastery Rate',
+                                'value': round(goal_mastery_percentage, 1),
+                                'color': 'green',
+                                'percentage': round(goal_mastery_rate, 0)
+                            },
+                            {
+                                'label': 'Behavior Improvement',
+                                'value': round(behavior_improvement_percentage, 1),
+                                'color': 'gold',
+                                'percentage': round(behavior_improvement, 0)
+                            },
+                            {
+                                'label': 'Goals in Progress',
+                                'value': round(goals_in_progress_percentage, 1),
+                                'color': 'white',
+                                'count': in_progress_goals
+                            }
+                        ]
+                    },
+                    'legend': [
+                        {
+                            'label': 'Goal Mastery Rate',
+                            'value': f'{round(goal_mastery_rate, 0)}%',
+                            'color': 'green'
+                        },
+                        {
+                            'label': 'Behavior Improvement',
+                            'value': f'{round(behavior_improvement, 0)}%',
+                            'color': 'gold'
+                        },
+                        {
+                            'label': 'Goals in Progress',
+                            'value': str(in_progress_goals),
+                            'color': 'white'
+                        }
+                    ],
+                    'summary': {
+                        'goal_mastery_rate': round(goal_mastery_rate, 0),
+                        'behavior_improvement': round(behavior_improvement, 0),
+                        'goals_in_progress': in_progress_goals,
+                        'total_goals': total_goals_count,
+                        'achieved_goals': achieved_goals_count
+                    }
+                }
+            except Exception as e:
+                import logging
+                logging.error(f"Error calculating overall progress: {str(e)}")
+            
+            # Prepare final response
+            return Response({
+                'welcome': welcome_data,
+                'next_appointment': next_appointment,
+                'last_session_summary': last_session_summary,
+                'progress_report_status': progress_report,
+                'session_attendance_overview': attendance_overview,
+                'treatment_plan': treatment_plan_info,
+                'overall_progress': overall_progress,
+                'calculated_at': tz.now().isoformat()
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            import traceback
+            return Response({
+                'error': str(e),
+                'traceback': traceback.format_exc(),
+                'message': 'Failed to retrieve client dashboard data'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
