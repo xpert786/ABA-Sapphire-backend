@@ -941,13 +941,9 @@ class ClientDashboardView(APIView):
     """
     permission_classes = [IsAuthenticated]
     
-    def get(self, request, client_id):
+    def get(self, request, client_id=None):
         try:
             user = request.user
-            
-            # Get the client
-            from django.shortcuts import get_object_or_404
-            client = get_object_or_404(CustomUser, id=client_id, role__name='Clients/Parent')
             
             # Check permissions
             if not hasattr(user, 'role') or not user.role:
@@ -957,17 +953,27 @@ class ClientDashboardView(APIView):
             
             role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
             
-            # Permission check: Clients can only access their own dashboard
-            # Admins, Superadmins, and BCBAs can access any client's dashboard
-            if role_name == 'Clients/Parent':
-                if client.id != user.id:
+            # Determine which client's dashboard to show
+            # If client_id is provided in query params, use it (for admins/BCBAs)
+            # Otherwise, use the authenticated user as the client
+            requested_client_id = request.query_params.get('client_id') or client_id
+            
+            if requested_client_id:
+                # Admin/BCBA accessing a specific client's dashboard
+                if role_name not in ['Admin', 'Superadmin', 'BCBA']:
                     return Response({
-                        'error': 'You can only access your own dashboard'
+                        'error': 'You do not have permission to access other clients\' dashboards'
                     }, status=status.HTTP_403_FORBIDDEN)
-            elif role_name not in ['Admin', 'Superadmin', 'BCBA']:
-                return Response({
-                    'error': 'You do not have permission to access client dashboards'
-                }, status=status.HTTP_403_FORBIDDEN)
+                
+                from django.shortcuts import get_object_or_404
+                client = get_object_or_404(CustomUser, id=requested_client_id, role__name='Clients/Parent')
+            else:
+                # Client accessing their own dashboard
+                if role_name != 'Clients/Parent':
+                    return Response({
+                        'error': 'This endpoint is only available for clients. Use ?client_id=<id> parameter if you are an admin/BCBA.'
+                    }, status=status.HTTP_403_FORBIDDEN)
+                client = user
             
             # Import models
             from session.models import Session as TherapySession, GoalProgress, Activity, Incident
