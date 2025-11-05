@@ -847,8 +847,20 @@ class AIResponseViewSet(viewsets.ModelViewSet):
             if role_name in ['Admin', 'Superadmin']:
                 # Admin can see all AI responses
                 pass
-            elif role_name in ['BCBA', 'RBT']:
-                # Staff can see their own AI responses and responses for their sessions
+            elif role_name == 'BCBA':
+                # BCBA has broader access - can see:
+                # 1. Their own AI responses
+                # 2. AI responses for sessions where they are the staff
+                # 3. AI responses for sessions where they supervise the client
+                # 4. AI responses for sessions where the client has them as assigned_bcba
+                queryset = queryset.filter(
+                    Q(user=user) | 
+                    Q(session__staff=user) |
+                    Q(session__client__supervisor=user) |
+                    Q(session__client__assigned_bcba=user)
+                )
+            elif role_name == 'RBT':
+                # RBT can see their own AI responses and responses for their sessions
                 queryset = queryset.filter(
                     Q(user=user) | 
                     Q(session__staff=user) |
@@ -899,7 +911,25 @@ class AIResponseViewSet(viewsets.ModelViewSet):
             
             if role_name in ['Admin', 'Superadmin']:
                 has_permission = True
-            elif role_name in ['BCBA', 'RBT']:
+            elif role_name == 'BCBA':
+                # BCBA has broader access - can access:
+                # 1. Their own AI responses
+                # 2. AI responses for sessions where they are the staff
+                # 3. AI responses for sessions where they supervise the client
+                # 4. AI responses for sessions where the client has them as assigned_bcba
+                # 5. AI responses for any session if they are involved in the treatment plan
+                has_permission = (
+                    obj.user == user or
+                    (obj.session and (
+                        obj.session.staff == user or
+                        (obj.session.client and (
+                            obj.session.client.supervisor == user or
+                            getattr(obj.session.client, 'assigned_bcba', None) == user
+                        ))
+                    ))
+                )
+            elif role_name == 'RBT':
+                # RBT can access their own responses and responses for their sessions
                 has_permission = (
                     obj.user == user or
                     (obj.session and obj.session.staff == user) or
@@ -951,7 +981,16 @@ class AIResponseViewSet(viewsets.ModelViewSet):
                 role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
                 if role_name in ['Admin', 'Superadmin']:
                     has_access = True
-                elif role_name in ['BCBA', 'RBT']:
+                elif role_name == 'BCBA':
+                    # BCBA has broader access
+                    has_access = (
+                        session.staff == user or
+                        (session.client and (
+                            session.client.supervisor == user or
+                            getattr(session.client, 'assigned_bcba', None) == user
+                        ))
+                    )
+                elif role_name == 'RBT':
                     has_access = (session.staff == user) or (session.client.supervisor == user if session.client and session.client.supervisor else False)
                 elif role_name == 'Clients/Parent':
                     has_access = (session.client == user)
