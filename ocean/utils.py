@@ -4,6 +4,8 @@ from .serializers import ChatMessageSerializer, AlertSerializer
 import openai
 from django.conf import settings
 from django.utils import timezone
+import time
+import json
 
 def broadcast_chat(chat):
     channel_layer = get_channel_layer()
@@ -18,6 +20,54 @@ def broadcast_alert(alert):
         f"user_{alert.user.id}",
         {"type": "alert_message", "message": AlertSerializer(alert).data}
     )
+
+
+def save_ai_response(response_type, prompt, response, user=None, session=None, 
+                     model_used=None, tokens_used=None, processing_time=None, 
+                     context_data=None, is_successful=True, error_message=None):
+    """
+    Helper function to save AI responses to the database for admin tracking
+    
+    Args:
+        response_type: Type of AI response ('chat', 'session_notes', 'bcba_analysis', etc.)
+        prompt: The prompt or input that generated the response
+        response: The AI-generated response
+        user: User who requested the response
+        session: Related session (if applicable)
+        model_used: AI model used (e.g., 'gpt-4', 'gpt-3.5-turbo')
+        tokens_used: Number of tokens used
+        processing_time: Processing time in seconds
+        context_data: Additional context data as dict
+        is_successful: Whether generation was successful
+        error_message: Error message if generation failed
+    """
+    try:
+        from .models import AIResponse
+        
+        # Convert context_data to JSON if it's a dict
+        if context_data and isinstance(context_data, dict):
+            context_json = context_data
+        else:
+            context_json = context_data
+        
+        AIResponse.objects.create(
+            response_type=response_type,
+            user=user,
+            session=session,
+            prompt=str(prompt)[:10000] if prompt else '',  # Limit prompt size
+            response=str(response)[:50000] if response else '',  # Limit response size
+            model_used=model_used or '',
+            tokens_used=tokens_used,
+            processing_time=processing_time,
+            context_data=context_json,
+            is_successful=is_successful,
+            error_message=error_message[:1000] if error_message else None
+        )
+    except Exception as e:
+        # Don't fail the main request if saving fails
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to save AI response: {str(e)}")
 
 
 def generate_ai_response(prompt: str, context: str = "") -> str:
@@ -122,6 +172,7 @@ IMPORTANT:
         # Increase token limit for business overview responses
         max_tokens = 500 if role_name in ['Admin', 'Superadmin'] else 300
 
+        start_time = time.time()
         response = openai.chat.completions.create(
             model="gpt-4",
             messages=messages,
@@ -129,10 +180,43 @@ IMPORTANT:
             temperature=0.3  # Slightly more creative but still factual
         )
 
+        processing_time = time.time() - start_time
         ai_text = response.choices[0].message.content
+        
+        # Extract token usage if available
+        tokens_used = None
+        if hasattr(response, 'usage'):
+            tokens_used = response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else None
+        
+        # Save to database
+        save_ai_response(
+            response_type='chat',
+            prompt=prompt,
+            response=ai_text,
+            user=user,
+            session=None,
+            model_used='gpt-4',
+            tokens_used=tokens_used,
+            processing_time=processing_time,
+            context_data={'context_preview': context[:500] if context else ''},
+            is_successful=True
+        )
+        
         return ai_text
 
     except Exception as e:
+        error_msg = str(e)
+        # Save error response
+        save_ai_response(
+            response_type='chat',
+            prompt=prompt,
+            response=f"AI error: {error_msg}",
+            user=user,
+            session=None,
+            model_used='gpt-4',
+            is_successful=False,
+            error_message=error_msg
+        )
         return f"AI error: {e}"
 
 
@@ -636,7 +720,6 @@ Keep analysis concise and actionable. Use markdown formatting."""
         # Set timeout on the client level
         import time
         start_time = time.time()
-        
         try:
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",  # Fastest model for quick responses
@@ -645,19 +728,87 @@ Keep analysis concise and actionable. Use markdown formatting."""
                 temperature=0.3  # Slightly creative but mostly factual
             )
             
-            elapsed_time = time.time() - start_time
-            if elapsed_time > 20:  # Log if taking too long
-                print(f"Warning: AI request took {elapsed_time:.2f} seconds")
+            processing_time = time.time() - start_time
+            if processing_time > 20:  # Log if taking too long
+                print(f"Warning: AI request took {processing_time:.2f} seconds")
+            
+            bcba_analysis = response.choices[0].message.content
+            
+            # Extract token usage
+            tokens_used = None
+            if hasattr(response, 'usage'):
+                tokens_used = response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else None
+            
+            # Get session from context if available
+            session = None
+            if 'session_id' in session_data.get('session_info', {}):
+                try:
+                    from session.models import Session
+                    session = Session.objects.filter(id=session_data['session_info']['session_id']).first()
+                except:
+                    pass
+            
+            # Get user from session if available
+            user = None
+            if session and hasattr(session, 'bcba_analyzed_by'):
+                # This will be set by the view, but we can try to get from session
+                user = getattr(session, 'bcba_analyzed_by', None)
+            
+            # Save to database (user will be set by the view)
+            save_ai_response(
+                response_type='bcba_analysis',
+                prompt=prompt[:5000],
+                response=bcba_analysis,
+                user=user,  # Will be updated by view if needed
+                session=session,
+                model_used='gpt-3.5-turbo',
+                tokens_used=tokens_used,
+                processing_time=processing_time,
+                context_data={
+                    'rbt_name': rbt_name,
+                    'client_name': client_name,
+                    'session_data_summary': {
+                        'activities_count': len(session_data.get('activities', [])),
+                        'goals_count': len(session_data.get('goals', [])),
+                        'abc_events_count': len(session_data.get('abc_events', []))
+                    }
+                },
+                is_successful=True
+            )
+            
+            return bcba_analysis
                 
         except Exception as api_error:
+            processing_time = time.time() - start_time
+            error_msg = str(api_error)
+            
+            # Try to save error response
+            try:
+                session = None
+                if 'session_id' in session_data.get('session_info', {}):
+                    from session.models import Session
+                    session = Session.objects.filter(id=session_data['session_info']['session_id']).first()
+                
+                save_ai_response(
+                    response_type='bcba_analysis',
+                    prompt=prompt[:5000] if 'prompt' in locals() else str(session_data)[:5000],
+                    response=f"AI error: {error_msg}",
+                    user=None,
+                    session=session,
+                    model_used='gpt-3.5-turbo',
+                    processing_time=processing_time,
+                    is_successful=False,
+                    error_message=error_msg
+                )
+            except:
+                pass
+            
             # If API call fails or times out, try with even simpler model
-            if "timeout" in str(api_error).lower() or "timed out" in str(api_error).lower():
-                raise Exception(f"AI service timeout: {str(api_error)}")
+            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                raise Exception(f"AI service timeout: {error_msg}")
             raise
 
-        bcba_analysis = response.choices[0].message.content
-        return bcba_analysis
-
     except Exception as e:
+        error_msg = str(e)
         # Re-raise the exception so the view can handle it
-        raise Exception(f"AI error generating BCBA analysis: {str(e)}")
+        raise Exception(f"AI error generating BCBA analysis: {error_msg}")

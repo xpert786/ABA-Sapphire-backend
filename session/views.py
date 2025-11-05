@@ -3552,7 +3552,7 @@ AI analysis generation timed out. Please review the session data above and provi
         bcba_analysis = analysis_result[0]
         
         # Save the analysis to database
-        from ocean.models import SessionNoteFlow
+        from ocean.models import SessionNoteFlow, AIResponse
         from django.db import transaction
         
         try:
@@ -3562,6 +3562,18 @@ AI analysis generation timed out. Please review the session data above and provi
                 note_flow.bcba_analyzed_by = user
                 note_flow.bcba_analyzed_at = timezone.now()
                 note_flow.save()
+                
+                # Update the AIResponse with the user who generated it
+                try:
+                    ai_response = AIResponse.objects.filter(
+                        session=session,
+                        response_type='bcba_analysis'
+                    ).order_by('-created_at').first()
+                    if ai_response and not ai_response.user:
+                        ai_response.user = user
+                        ai_response.save()
+                except:
+                    pass
                 
                 # Also save as a SessionNote for easy access
                 from session.models import SessionNote

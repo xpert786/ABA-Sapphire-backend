@@ -262,3 +262,79 @@ class ProgressMonitoring(models.Model):
     
     def __str__(self):
         return f"{self.client.username} - {self.period_start} to {self.period_end}"
+
+
+class AIResponse(models.Model):
+    """Model for storing all AI-generated responses for tracking and admin review"""
+    
+    RESPONSE_TYPES = [
+        ('chat', 'Chat Response'),
+        ('session_notes', 'Session Notes'),
+        ('bcba_analysis', 'BCBA Analysis'),
+        ('goal_suggestions', 'Goal Suggestions'),
+        ('business_insights', 'Business Insights'),
+        ('other', 'Other'),
+    ]
+    
+    # Response metadata
+    response_type = models.CharField(max_length=30, choices=RESPONSE_TYPES, help_text="Type of AI response")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ai_responses',
+        help_text="User who requested the AI response"
+    )
+    
+    # Related objects
+    session = models.ForeignKey(
+        'session.Session',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ai_responses',
+        help_text="Related session (if applicable)"
+    )
+    
+    # Input and output
+    prompt = models.TextField(help_text="User prompt or input that generated this response")
+    response = models.TextField(help_text="AI-generated response")
+    
+    # Context and metadata
+    context_data = models.JSONField(blank=True, null=True, help_text="Additional context data used for generation")
+    model_used = models.CharField(max_length=50, blank=True, help_text="AI model used (e.g., gpt-4, gpt-3.5-turbo)")
+    tokens_used = models.IntegerField(null=True, blank=True, help_text="Number of tokens used")
+    processing_time = models.FloatField(null=True, blank=True, help_text="Processing time in seconds")
+    
+    # Status and tracking
+    is_successful = models.BooleanField(default=True, help_text="Whether the response was generated successfully")
+    error_message = models.TextField(blank=True, null=True, help_text="Error message if generation failed")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "AI Response"
+        verbose_name_plural = "AI Responses"
+        indexes = [
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['response_type']),
+            models.Index(fields=['user']),
+            models.Index(fields=['session']),
+        ]
+    
+    def __str__(self):
+        user_str = self.user.username if self.user else "Unknown"
+        session_str = f" - Session {self.session.id}" if self.session else ""
+        return f"{self.get_response_type_display()} - {user_str}{session_str} ({self.created_at.strftime('%Y-%m-%d %H:%M')})"
+    
+    def get_truncated_response(self):
+        """Get truncated response for admin display"""
+        return self.response[:200] + "..." if len(self.response) > 200 else self.response
+    
+    def get_truncated_prompt(self):
+        """Get truncated prompt for admin display"""
+        return self.prompt[:200] + "..." if len(self.prompt) > 200 else self.prompt
