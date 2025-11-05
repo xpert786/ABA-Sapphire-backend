@@ -3,8 +3,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import ChatMessage, Alert, SessionPrompt, SessionNoteFlow, SkillProgress, Milestone, ProgressMonitoring
-from .serializers import ChatMessageSerializer, AlertSerializer, SessionPromptSerializer, SessionNoteFlowSerializer, SkillProgressSerializer, ProgressMonitoringSerializer
+from .models import ChatMessage, Alert, SessionPrompt, SessionNoteFlow, SkillProgress, Milestone, ProgressMonitoring, AIResponse
+from .serializers import ChatMessageSerializer, AlertSerializer, SessionPromptSerializer, SessionNoteFlowSerializer, SkillProgressSerializer, ProgressMonitoringSerializer, AIResponseSerializer
 from .utils import generate_ai_response, generate_ai_response_with_db_context, generate_session_notes, generate_bcba_session_analysis
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -823,3 +823,157 @@ def get_client_progress_monitoring(request, client_id):
             "error": f"Error calculating progress monitoring: {str(e)}",
             "traceback": traceback.format_exc()
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AIResponseViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing AI Responses
+    Supports CRUD operations: Create, Read, Update, Delete
+    """
+    serializer_class = AIResponseSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """
+        Filter AI responses based on user role and permissions
+        """
+        user = self.request.user
+        queryset = AIResponse.objects.select_related('user', 'session').all()
+        
+        # Role-based access control
+        if hasattr(user, 'role') and user.role:
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            
+            if role_name in ['Admin', 'Superadmin']:
+                # Admin can see all AI responses
+                pass
+            elif role_name in ['BCBA', 'RBT']:
+                # Staff can see their own AI responses and responses for their sessions
+                queryset = queryset.filter(
+                    Q(user=user) | 
+                    Q(session__staff=user) |
+                    Q(session__client__supervisor=user)
+                )
+            elif role_name == 'Clients/Parent':
+                # Clients can see AI responses for their sessions
+                queryset = queryset.filter(session__client=user)
+            else:
+                # Other roles can only see their own responses
+                queryset = queryset.filter(user=user)
+        else:
+            # Default: users can only see their own responses
+            queryset = queryset.filter(user=user)
+        
+        # Filter by query parameters
+        response_type = self.request.query_params.get('response_type')
+        if response_type:
+            queryset = queryset.filter(response_type=response_type)
+        
+        session_id = self.request.query_params.get('session_id')
+        if session_id:
+            queryset = queryset.filter(session_id=session_id)
+        
+        user_id = self.request.query_params.get('user_id')
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        
+        is_successful = self.request.query_params.get('is_successful')
+        if is_successful is not None:
+            queryset = queryset.filter(is_successful=is_successful.lower() == 'true')
+        
+        return queryset.order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        """
+        Override to set user from request if not provided
+        """
+        if 'user' not in serializer.validated_data:
+            serializer.save(user=self.request.user)
+        else:
+            serializer.save()
+    
+    @action(detail=False, methods=['get'])
+    def by_session(self, request):
+        """
+        Get all AI responses for a specific session
+        Query param: session_id
+        """
+        session_id = request.query_params.get('session_id')
+        if not session_id:
+            return Response(
+                {"error": "session_id query parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            session = Session.objects.get(id=session_id)
+            
+            # Check permissions
+            user = request.user
+            has_access = False
+            
+            if hasattr(user, 'role') and user.role:
+                role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+                if role_name in ['Admin', 'Superadmin']:
+                    has_access = True
+                elif role_name in ['BCBA', 'RBT']:
+                    has_access = (session.staff == user) or (session.client.supervisor == user if session.client and session.client.supervisor else False)
+                elif role_name == 'Clients/Parent':
+                    has_access = (session.client == user)
+            
+            if not has_access:
+                return Response(
+                    {"error": "You don't have permission to access this session's AI responses"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            responses = AIResponse.objects.filter(session_id=session_id).order_by('-created_at')
+            serializer = self.get_serializer(responses, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except Session.DoesNotExist:
+            return Response(
+                {"error": "Session not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=False, methods=['get'])
+    def by_type(self, request):
+        """
+        Get all AI responses by response type
+        Query param: response_type (required)
+        """
+        response_type = request.query_params.get('response_type')
+        if not response_type:
+            return Response(
+                {"error": "response_type query parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        responses = self.get_queryset().filter(response_type=response_type)
+        serializer = self.get_serializer(responses, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['patch'])
+    def update_response(self, request, pk=None):
+        """
+        Update only the response text and related fields
+        Allows partial updates
+        """
+        ai_response = self.get_object()
+        
+        # Check permissions - only the creator or admin can update
+        if ai_response.user != request.user and not request.user.is_superuser:
+            if hasattr(request.user, 'role') and request.user.role:
+                role_name = request.user.role.name if hasattr(request.user.role, 'name') else str(request.user.role)
+                if role_name not in ['Admin', 'Superadmin']:
+                    return Response(
+                        {"error": "You don't have permission to update this AI response"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+        
+        serializer = self.get_serializer(ai_response, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
