@@ -936,14 +936,20 @@ class ClientDashboardView(APIView):
     - Session Attendance Overview
     - Treatment Plan
     - Overall Progress
+    
+    Access: Clients can access their own dashboard, Admins/BCBAs can access any client's dashboard
     """
     permission_classes = [IsAuthenticated]
     
-    def get(self, request):
+    def get(self, request, client_id):
         try:
             user = request.user
             
-            # Check if user is a client
+            # Get the client
+            from django.shortcuts import get_object_or_404
+            client = get_object_or_404(CustomUser, id=client_id, role__name='Clients/Parent')
+            
+            # Check permissions
             if not hasattr(user, 'role') or not user.role:
                 return Response({
                     'error': 'User role not found'
@@ -951,13 +957,17 @@ class ClientDashboardView(APIView):
             
             role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
             
-            # Only clients can access their own dashboard
-            if role_name != 'Clients/Parent':
+            # Permission check: Clients can only access their own dashboard
+            # Admins, Superadmins, and BCBAs can access any client's dashboard
+            if role_name == 'Clients/Parent':
+                if client.id != user.id:
+                    return Response({
+                        'error': 'You can only access your own dashboard'
+                    }, status=status.HTTP_403_FORBIDDEN)
+            elif role_name not in ['Admin', 'Superadmin', 'BCBA']:
                 return Response({
-                    'error': 'This endpoint is only available for clients'
+                    'error': 'You do not have permission to access client dashboards'
                 }, status=status.HTTP_403_FORBIDDEN)
-            
-            client = user
             
             # Import models
             from session.models import Session as TherapySession, GoalProgress, Activity, Incident

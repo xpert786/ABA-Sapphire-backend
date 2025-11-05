@@ -57,5 +57,5 @@ urlpatterns = [
     path('admin/dashboard/', AdminDashboardView.as_view(), name='admin-dashboard'),
     
     # Client Dashboard
-    path('client/dashboard/', ClientDashboardView.as_view(), name='client-dashboard'),
+    path('client/<int:client_id>/dashboard/', ClientDashboardView.as_view(), name='client-dashboard'),
 ]
