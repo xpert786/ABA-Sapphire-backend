@@ -3522,8 +3522,22 @@ AI analysis generation timed out. Please review the session data above and provi
             except:
                 pass
             
+            # Try to get or create AIResponse for timeout case
+            ai_response_id = None
+            try:
+                from ocean.models import AIResponse
+                ai_response = AIResponse.objects.filter(
+                    session=session,
+                    response_type='bcba_analysis'
+                ).order_by('-created_at').first()
+                if ai_response:
+                    ai_response_id = ai_response.id
+            except:
+                pass
+            
             return Response({
                 'bcba_analysis': basic_analysis,
+                'ai_response_id': ai_response_id,
                 'timeout_warning': True,
                 'message': 'AI analysis timed out. A basic analysis has been generated from session data. Please retry for full AI analysis.',
                 'session_info': {
@@ -3532,7 +3546,8 @@ AI analysis generation timed out. Please review the session data above and provi
                     'rbt_name': rbt_name,
                     'session_date': str(session.session_date),
                     'status': session.status
-                }
+                },
+                'ai_response_url': f'/ocean/ai-responses/{ai_response_id}/' if ai_response_id else None
             }, status=status.HTTP_200_OK)
         
         if analysis_error[0]:
@@ -3555,6 +3570,7 @@ AI analysis generation timed out. Please review the session data above and provi
         from ocean.models import SessionNoteFlow, AIResponse
         from django.db import transaction
         
+        ai_response_id = None
         try:
             with transaction.atomic():
                 note_flow, created = SessionNoteFlow.objects.get_or_create(session=session)
@@ -3563,17 +3579,44 @@ AI analysis generation timed out. Please review the session data above and provi
                 note_flow.bcba_analyzed_at = timezone.now()
                 note_flow.save()
                 
-                # Update the AIResponse with the user who generated it
+                # Get or create the AIResponse record (it should already be created by generate_bcba_session_analysis)
                 try:
                     ai_response = AIResponse.objects.filter(
                         session=session,
                         response_type='bcba_analysis'
                     ).order_by('-created_at').first()
-                    if ai_response and not ai_response.user:
-                        ai_response.user = user
-                        ai_response.save()
-                except:
-                    pass
+                    
+                    if ai_response:
+                        # Update the AIResponse with the user who generated it
+                        if not ai_response.user:
+                            ai_response.user = user
+                            ai_response.save()
+                        ai_response_id = ai_response.id
+                    else:
+                        # If AIResponse wasn't created by the utility function, create it now
+                        # Build prompt summary for the AI response
+                        prompt_summary = f"BCBA analysis for session {session.id} - {rbt_name} with {client_name} on {session.session_date}"
+                        ai_response = AIResponse.objects.create(
+                            response_type='bcba_analysis',
+                            user=user,
+                            session=session,
+                            prompt=prompt_summary,
+                            response=bcba_analysis,
+                            model_used='gpt-3.5-turbo',
+                            processing_time=elapsed,
+                            is_successful=True,
+                            context_data={
+                                'rbt_name': rbt_name,
+                                'client_name': client_name,
+                                'session_id': session.id,
+                                'session_date': str(session.session_date)
+                            }
+                        )
+                        ai_response_id = ai_response.id
+                except Exception as ai_resp_error:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error managing AIResponse: {str(ai_resp_error)}")
                 
                 # Also save as a SessionNote for easy access
                 from session.models import SessionNote
@@ -3599,6 +3642,7 @@ AI analysis generation timed out. Please review the session data above and provi
         
         return Response({
             'bcba_analysis': bcba_analysis,
+            'ai_response_id': ai_response_id,
             'session_info': {
                 'session_id': session.id,
                 'client_name': client_name,
