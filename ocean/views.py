@@ -883,6 +883,41 @@ class AIResponseViewSet(viewsets.ModelViewSet):
         
         return queryset.order_by('-created_at')
     
+    def get_object(self):
+        """
+        Override to check permissions after getting the object
+        This allows us to return a proper 403 instead of 404 when object exists but user lacks permission
+        """
+        obj = get_object_or_404(AIResponse, pk=self.kwargs.get('pk'))
+        
+        # Check permissions
+        user = self.request.user
+        has_permission = False
+        
+        if hasattr(user, 'role') and user.role:
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            
+            if role_name in ['Admin', 'Superadmin']:
+                has_permission = True
+            elif role_name in ['BCBA', 'RBT']:
+                has_permission = (
+                    obj.user == user or
+                    (obj.session and obj.session.staff == user) or
+                    (obj.session and obj.session.client and obj.session.client.supervisor == user)
+                )
+            elif role_name == 'Clients/Parent':
+                has_permission = (obj.session and obj.session.client == user)
+            else:
+                has_permission = (obj.user == user)
+        else:
+            has_permission = (obj.user == user)
+        
+        if not has_permission:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You don't have permission to access this AI response.")
+        
+        return obj
+    
     def perform_create(self, serializer):
         """
         Override to set user from request if not provided
@@ -954,26 +989,23 @@ class AIResponseViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(responses, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
-    @action(detail=True, methods=['patch'])
-    def update_response(self, request, pk=None):
+    def update(self, request, *args, **kwargs):
         """
-        Update only the response text and related fields
-        Allows partial updates
+        Update AI response (PUT/PATCH)
+        Permissions are already checked in get_object()
         """
-        ai_response = self.get_object()
-        
-        # Check permissions - only the creator or admin can update
-        if ai_response.user != request.user and not request.user.is_superuser:
-            if hasattr(request.user, 'role') and request.user.role:
-                role_name = request.user.role.name if hasattr(request.user.role, 'name') else str(request.user.role)
-                if role_name not in ['Admin', 'Superadmin']:
-                    return Response(
-                        {"error": "You don't have permission to update this AI response"},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-        
-        serializer = self.get_serializer(ai_response, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+    
+    def perform_update(self, serializer):
+        """
+        Override to prevent updating certain fields
+        """
+        # Don't allow changing user or created_at
+        serializer.validated_data.pop('user', None)
+        serializer.validated_data.pop('created_at', None)
+        serializer.save()
