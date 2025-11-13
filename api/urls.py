@@ -23,7 +23,8 @@ from .views import (
     UserCertificatesView,
     BusinessInsightsKPIView,
     AdminDashboardView,
-    ClientDashboardView
+    ClientDashboardView,
+    RBTDashboardView
 )
 
 urlpatterns = [
@@ -58,4 +59,7 @@ urlpatterns = [
     
     # Client Dashboard
     path('client/dashboard/', ClientDashboardView.as_view(), name='client-dashboard'),
+    
+    # RBT/Therapist Dashboard
+    path('rbt/dashboard/', RBTDashboardView.as_view(), name='rbt-dashboard'),
 ]

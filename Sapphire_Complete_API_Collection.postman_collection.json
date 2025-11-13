@@ -1,0 +1,1863 @@
+{
+	"info": {
+		"_postman_id": "sapphire-complete-api-collection",
+		"name": "Sapphire ABA Therapy - Complete API Collection",
+		"description": "Complete Postman collection for Sapphire ABA Therapy Backend API - All endpoints including Authentication, Users, Sessions, Treatment Plans, Scheduling, Messaging, Dashboards, and Ocean AI",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"version": "1.0.0"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    var jsonData = pm.response.json();",
+									"    pm.environment.set(\"access_token\", jsonData.access);",
+									"    pm.environment.set(\"refresh_token\", jsonData.refresh);",
+									"    console.log(\"Access token saved to environment\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"your_username\",\n    \"password\": \"your_password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/login/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "login", ""]
+						},
+						"description": "Login to get JWT access and refresh tokens"
+					},
+					"response": []
+				},
+				{
+					"name": "Register",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"newuser\",\n    \"email\": \"user@example.com\",\n    \"password\": \"password123\",\n    \"name\": \"John Doe\",\n    \"role\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/register/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "register", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"refresh\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/logout/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "logout", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Send OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/send-otp/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "send-otp", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify OTP",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\",\n    \"code\": \"1234\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/verify-otp/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "verify-otp", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Set New Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_id\": 1,\n    \"new_password\": \"newpassword123\",\n    \"confirm_password\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/set-new-password/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "set-new-password", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"old_password\": \"oldpassword\",\n    \"new_password\": \"newpassword123\",\n    \"confirm_password\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/update-password/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "update-password", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/current_user/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "current_user", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Users",
+			"item": [
+				{
+					"name": "List Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/users/?page=1&page_size=10",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "users", ""],
+							"query": [
+								{"key": "page", "value": "1"},
+								{"key": "page_size", "value": "10"}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/users/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "users", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update User",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Updated Name\",\n    \"email\": \"updated@example.com\",\n    \"phone\": \"1234567890\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/users/1/edit/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "users", "1", "edit", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete User",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/users/1/delete/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "users", "1", "delete", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update User Status",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"Active\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/users/1/status/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "users", "1", "status", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Latest Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/users_latest/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "users_latest", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Admin Distribution",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/adminDistributionView/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "adminDistributionView", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Assign Permissions",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_id\": 1,\n    \"permissions\": [\"view_user\", \"edit_user\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/assign-permissions/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "assign-permissions", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Permissions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/permissions/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "permissions", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Certificates",
+			"item": [
+				{
+					"name": "List Certificates",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/certificates/?user_id=1",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "certificates", ""],
+							"query": [
+								{"key": "user_id", "value": "1", "disabled": true}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Certificate",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{"key": "user", "value": "1", "type": "text"},
+								{"key": "name", "value": "RBT Certification", "type": "text"},
+								{"key": "issuing_organization", "value": "BACB", "type": "text"},
+								{"key": "issue_date", "value": "2024-01-01", "type": "text"},
+								{"key": "expiry_date", "value": "2026-01-01", "type": "text"},
+								{"key": "certificate_file", "value": "", "type": "file"}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/certificates/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "certificates", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Certificate Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/certificates/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "certificates", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Certificate",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{"key": "name", "value": "Updated Certificate", "type": "text"}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/certificates/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "certificates", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Certificate",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/certificates/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "certificates", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Certificates",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/users/1/certificates/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "users", "1", "certificates", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Dashboards",
+			"item": [
+				{
+					"name": "Admin Dashboard",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/admin/dashboard/?days=7",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "admin", "dashboard", ""],
+							"query": [
+								{"key": "days", "value": "7", "disabled": true}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Client Dashboard",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/client/dashboard/?client_id=1",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "client", "dashboard", ""],
+							"query": [
+								{"key": "client_id", "value": "1", "disabled": true}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "RBT Dashboard",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/rbt/dashboard/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "rbt", "dashboard", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Business Insights KPIs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/api/business-insights/kpis/?period=last_week",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "api", "business-insights", "kpis", ""],
+							"query": [
+								{"key": "period", "value": "last_week", "disabled": true}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Sessions",
+			"item": [
+				{
+					"name": "List Sessions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/?status=completed&start_date=2024-01-01&end_date=2024-01-31",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", ""],
+							"query": [
+								{"key": "status", "value": "completed", "disabled": true},
+								{"key": "start_date", "value": "2024-01-01", "disabled": true},
+								{"key": "end_date", "value": "2024-01-31", "disabled": true}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Session Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Session",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client\": 1,\n    \"session_date\": \"2024-01-15\",\n    \"start_time\": \"12:00:00\",\n    \"end_time\": \"13:00:00\",\n    \"location\": \"Home Visit\",\n    \"service_type\": \"ABA\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Session",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"completed\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Session",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Upcoming Sessions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/upcoming-sessions/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "upcoming-sessions", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Completed Sessions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/completed-sessions/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "completed-sessions", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Session Details",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/details/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", "details", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Start Session from Schedule",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"scheduler_session_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/start-from-schedule/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "start-from-schedule", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Session Timer - Start",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"start\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/timer/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", "timer", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Session Timer - Stop",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"action\": \"stop\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/timer/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", "timer", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Session Timer",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/timer/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", "timer", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Add Activity",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"activity_name\": \"Picture Naming\",\n    \"duration_minutes\": 15,\n    \"reinforcement_strategies\": \"Token economy\",\n    \"notes\": \"Good engagement\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/activities/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", "activities", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Add Goal Progress",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"goal_description\": \"Requesting help\",\n    \"is_met\": true,\n    \"implementation_method\": \"verbal\",\n    \"notes\": \"Client showed good progress\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/goal-progress/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", "goal-progress", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Add ABC Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"antecedent\": \"Transition from preferred activity\",\n    \"behavior\": \"Verbal protest\",\n    \"consequence\": \"Redirected to task\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/abc-events/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", "abc-events", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Add Incident",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"incident_type\": \"minor_disruption\",\n    \"behavior_severity\": \"low\",\n    \"start_time\": \"2024-01-15T14:30:00Z\",\n    \"duration_minutes\": 5,\n    \"description\": \"Brief non-compliance\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/incidents/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", "incidents", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Save Session Data and Generate Notes",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"activities\": [\n        {\n            \"name\": \"Picture Naming\",\n            \"duration\": 15,\n            \"description\": \"Token economy\",\n            \"response\": \"Good engagement\"\n        }\n    ],\n    \"goals\": [\n        {\n            \"goal\": \"Requesting help\",\n            \"target\": \"80% accuracy\",\n            \"trials\": 10,\n            \"successes\": 8,\n            \"percentage\": 80,\n            \"notes\": \"Good progress\"\n        }\n    ],\n    \"abc_events\": [],\n    \"reinforcement_strategies\": [],\n    \"incidents\": []\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/1/save-and-generate-notes/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "1", "save-and-generate-notes", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Session",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"session_id\": 1,\n    \"submit_type\": \"submit\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/submit/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "submit", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Session Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/statistics/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "statistics", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Sessions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/sessions/user-sessions/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "sessions", "user-sessions", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get BCBA Clients",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/bcba/clients/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "bcba", "clients", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Time Tracker Summary",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/session/time-trackers/summary/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "session", "time-trackers", "summary", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Treatment Plans",
+			"item": [
+				{
+					"name": "List Treatment Plans",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Treatment Plan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_name\": \"John Doe\",\n    \"client_id\": \"1\",\n    \"plan_type\": \"comprehensive_aba\",\n    \"assessment_tools_used\": \"VB-MAPP, FBA\",\n    \"client_strengths\": \"Good attention span\",\n    \"areas_of_need\": \"Communication skills\",\n    \"reinforcement_strategies\": \"Token economy\",\n    \"prompting_hierarchy\": \"Least to most\",\n    \"behavior_interventions\": \"Positive reinforcement\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Treatment Plan Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Treatment Plan",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"submitted\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Treatment Plan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/1/submit/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "1", "submit", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Approve Treatment Plan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"approved\": true,\n    \"approval_notes\": \"Plan approved\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/1/approve/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "1", "approve", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Treatment Goals",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/1/goals/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "1", "goals", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Treatment Goal",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"goal_description\": \"Client will request preferred items using 2-3 word phrases\",\n    \"mastery_criteria\": \"80%_accuracy\",\n    \"priority\": \"high\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/1/goals/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "1", "goals", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Treatment Goal Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/1/goals/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "1", "goals", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Treatment Goal",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"is_achieved\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/1/goals/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "1", "goals", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "AI Goal Suggestions",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client_id\": \"1\",\n    \"client_name\": \"John Doe\",\n    \"assessment_tools\": [\"VB-MAPP\"],\n    \"client_strengths\": \"Good attention span\",\n    \"areas_of_need\": \"Communication skills\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/goal-suggestions/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "goal-suggestions", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Treatment Plan Stats",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/treatment-plan/plans/stats/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "treatment-plan", "plans", "stats", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Scheduler",
+			"item": [
+				{
+					"name": "List Clients",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/clients/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "clients", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Client Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/clients/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "clients", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List RBTs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/rbts/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "rbts", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List BCBAs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/bcbas/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "bcbas", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Staff",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/staffs/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "staffs", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Scheduled Sessions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "sessions", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Scheduled Session",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"client\": 1,\n    \"staff\": 2,\n    \"session_date\": \"2024-01-15\",\n    \"start_time\": \"10:00:00\",\n    \"end_time\": \"11:00:00\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "sessions", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Scheduled Session Detail",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "sessions", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Scheduled Session",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"start_time\": \"10:30:00\",\n    \"end_time\": \"11:30:00\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "sessions", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Scheduled Session",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/scheduler/sessions/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "scheduler", "sessions", "1", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Messaging",
+			"item": [
+				{
+					"name": "Start Private Chat",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"participant_id\": 2\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/messaging/chat/start/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "messaging", "chat", "start", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Chat Rooms",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/messaging/chat/rooms/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "messaging", "chat", "rooms", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Chat Room",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/messaging/chat/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "messaging", "chat", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/messaging/chat/1/messages/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "messaging", "chat", "1", "messages", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Send Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"content\": \"Hello, how are you?\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/messaging/chat/1/send/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "messaging", "chat", "1", "send", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Ocean AI",
+			"item": [
+				{
+					"name": "List Chat Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/ocean/chat-messages/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "ocean", "chat-messages", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Send Chat Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"What are some good activities for a 5-year-old with autism?\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/sapphire/ocean/chat-messages/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "ocean", "chat-messages", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Alerts",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/ocean/alerts/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "ocean", "alerts", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Client Progress Monitoring",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/ocean/progress-monitoring/1/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "ocean", "progress-monitoring", "1", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Session Prompts",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/ocean/session-prompts/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "ocean", "session-prompts", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Session Notes",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/ocean/session-notes/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "ocean", "session-notes", ""]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List AI Responses",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{access_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/sapphire/ocean/ai-responses/",
+							"host": ["{{base_url}}"],
+							"path": ["sapphire", "ocean", "ai-responses", ""]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
+

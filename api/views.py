@@ -1335,3 +1335,442 @@ class ClientDashboardView(APIView):
                 'traceback': traceback.format_exc(),
                 'message': 'Failed to retrieve client dashboard data'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# RBT Dashboard View
+
+class RBTDashboardView(APIView):
+    """
+    API endpoint for RBT/Therapist dashboard data
+    Returns all dashboard information including:
+    - Welcome section
+    - Key Metrics (Today's Sessions, Hours This Week, Active Clients, Documentation)
+    - Quick Actions
+    - Weekly Sessions (bar chart)
+    - Client Progress Overview
+    - Today's Schedule
+    - Recent Alerts
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            user = request.user
+            
+            # Check if user is RBT, BCBA, or Admin
+            if not hasattr(user, 'role') or not user.role:
+                return Response({
+                    'error': 'User role not found'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            role_name = user.role.name if hasattr(user.role, 'name') else str(user.role)
+            
+            # Allow RBT, BCBA, and Admin to access
+            if role_name not in ['RBT', 'BCBA', 'Admin', 'Superadmin']:
+                return Response({
+                    'error': 'This dashboard is only available for RBT, BCBA, Admin, or Superadmin users'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Import required models
+            from session.models import Session as TherapySession, GoalProgress, Activity
+            from scheduler.models import Session as SchedulerSession
+            from treatment_plan.models import TreatmentPlan, TreatmentGoal
+            from ocean.models import Alert, SkillProgress
+            from django.db.models import Q, Count, Sum, Avg
+            from datetime import datetime, timedelta
+            from django.utils import timezone as tz
+            
+            today = tz.now().date()
+            now = tz.now()
+            
+            # Get start of week (Monday)
+            days_since_monday = today.weekday()  # 0 = Monday, 6 = Sunday
+            week_start = today - timedelta(days=days_since_monday)
+            week_end = week_start + timedelta(days=6)
+            
+            # 1. WELCOME SECTION
+            welcome_data = {
+                'greeting': f'Welcome Back, {user.name or user.get_full_name() or user.username}!',
+                'subtitle': "Here's An Overview Of Your Child's ABA Therapy Journey."
+            }
+            
+            # 2. KEY METRICS
+            
+            # Today's Sessions
+            today_sessions = TherapySession.objects.filter(
+                staff=user,
+                session_date=today
+            )
+            completed_today = today_sessions.filter(status='completed').count()
+            upcoming_today = today_sessions.filter(status__in=['scheduled', 'in_progress']).count()
+            total_today = today_sessions.count()
+            
+            # Get next session time
+            next_session = today_sessions.filter(
+                status__in=['scheduled', 'in_progress']
+            ).order_by('start_time').first()
+            next_session_time = None
+            if next_session:
+                next_session_time = next_session.start_time.strftime('%I:%M %p')
+            
+            # Hours This Week
+            week_sessions = TherapySession.objects.filter(
+                staff=user,
+                session_date__gte=week_start,
+                session_date__lte=week_end,
+                status='completed'
+            )
+            
+            # Calculate total hours from completed sessions
+            total_hours = 0
+            for session in week_sessions:
+                if session.duration:
+                    total_hours += session.duration.total_seconds() / 3600
+                elif session.start_time and session.end_time:
+                    # Calculate from start/end time
+                    start_dt = datetime.combine(session.session_date, session.start_time)
+                    end_dt = datetime.combine(session.session_date, session.end_time)
+                    if end_dt < start_dt:
+                        end_dt += timedelta(days=1)
+                    duration = (end_dt - start_dt).total_seconds() / 3600
+                    total_hours += duration
+            
+            # Assume typical week is 35 hours, calculate remaining
+            typical_week_hours = 35.0
+            remaining_hours = max(0, typical_week_hours - total_hours)
+            hours_status = "On track" if total_hours >= (typical_week_hours * 0.8) else "Below target"
+            
+            # Active Clients (clients assigned to this staff member)
+            active_clients = CustomUser.objects.filter(
+                Q(assigned_rbt=user) | Q(assigned_bcba=user)
+            ).distinct().count()
+            
+            # If no assigned clients, count unique clients from sessions this week
+            if active_clients == 0:
+                active_clients = TherapySession.objects.filter(
+                    staff=user,
+                    session_date__gte=week_start,
+                    session_date__lte=week_end
+                ).values('client').distinct().count()
+            
+            # Documentation Completion Rate
+            # Calculate based on sessions with completed notes
+            from ocean.models import SessionNoteFlow
+            week_sessions_with_notes = TherapySession.objects.filter(
+                staff=user,
+                session_date__gte=week_start,
+                session_date__lte=week_end,
+                status='completed'
+            )
+            total_completed_sessions = week_sessions_with_notes.count()
+            sessions_with_completed_notes = 0
+            
+            for session in week_sessions_with_notes:
+                try:
+                    note_flow = session.note_flow
+                    if note_flow and note_flow.final_note_submitted:
+                        sessions_with_completed_notes += 1
+                except:
+                    pass
+            
+            documentation_rate = (sessions_with_completed_notes / total_completed_sessions * 100) if total_completed_sessions > 0 else 0
+            documentation_status = "Excellent" if documentation_rate >= 90 else "Good" if documentation_rate >= 70 else "Needs Improvement"
+            
+            key_metrics = {
+                'todays_sessions': {
+                    'value': total_today,
+                    'completed': completed_today,
+                    'upcoming': upcoming_today,
+                    'subtext': f'{completed_today} completed, {upcoming_today} upcoming',
+                    'next_session_time': next_session_time
+                },
+                'hours_this_week': {
+                    'value': round(total_hours, 1),
+                    'remaining': round(remaining_hours, 1),
+                    'subtext': f'{round(remaining_hours, 1)} hours remaining',
+                    'status': hours_status
+                },
+                'active_clients': {
+                    'value': active_clients,
+                    'subtext': 'Assigned to you'
+                },
+                'documentation': {
+                    'value': f'{int(round(documentation_rate, 0))}%',
+                    'subtext': 'Completion rate',
+                    'status': documentation_status
+                }
+            }
+            
+            # 3. QUICK ACTIONS
+            quick_actions = [
+                {
+                    'id': 'log_session',
+                    'title': 'Log New Session',
+                    'icon': 'document',
+                    'route': '/sessions/new'
+                },
+                {
+                    'id': 'track_time',
+                    'title': 'Track Time',
+                    'icon': 'clock',
+                    'route': '/time-tracking'
+                },
+                {
+                    'id': 'progress_insights',
+                    'title': 'Progress Insights',
+                    'icon': 'bar-chart',
+                    'route': '/progress-insights'
+                },
+                {
+                    'id': 'messages',
+                    'title': 'Messages',
+                    'icon': 'chat',
+                    'route': '/messages'
+                }
+            ]
+            
+            # 4. WEEKLY SESSIONS (Bar Chart Data)
+            days_of_week = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            days_abbr = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+            weekly_sessions_data = []
+            
+            for day_offset in range(7):
+                day_date = week_start + timedelta(days=day_offset)
+                day_name = days_abbr[day_offset]
+                
+                # Get sessions for this day
+                day_sessions = TherapySession.objects.filter(
+                    staff=user,
+                    session_date=day_date
+                )
+                
+                # Count sessions
+                sessions_count = day_sessions.count()
+                
+                # Calculate hours for this day
+                day_hours = 0
+                for session in day_sessions.filter(status='completed'):
+                    if session.duration:
+                        day_hours += session.duration.total_seconds() / 3600
+                    elif session.start_time and session.end_time:
+                        start_dt = datetime.combine(session.session_date, session.start_time)
+                        end_dt = datetime.combine(session.session_date, session.end_time)
+                        if end_dt < start_dt:
+                            end_dt += timedelta(days=1)
+                        duration = (end_dt - start_dt).total_seconds() / 3600
+                        day_hours += duration
+                
+                weekly_sessions_data.append({
+                    'day': day_name,
+                    'day_full': days_of_week[day_offset],
+                    'date': day_date.isoformat(),
+                    'sessions': sessions_count,
+                    'hours': round(day_hours, 1)
+                })
+            
+            # 5. CLIENT PROGRESS OVERVIEW
+            # Get clients assigned to this staff member
+            assigned_clients = CustomUser.objects.filter(
+                Q(assigned_rbt=user) | Q(assigned_bcba=user)
+            ).distinct()
+            
+            # If no assigned clients, get from recent sessions
+            if not assigned_clients.exists():
+                assigned_clients = CustomUser.objects.filter(
+                    id__in=TherapySession.objects.filter(
+                        staff=user,
+                        session_date__gte=week_start - timedelta(days=30)
+                    ).values_list('client_id', flat=True).distinct()
+                )
+            
+            client_progress_data = []
+            for client in assigned_clients[:4]:  # Limit to 4 clients
+                # Get treatment plans for this client
+                treatment_plans = TreatmentPlan.objects.filter(
+                    Q(client_id=str(client.id)) |
+                    Q(client_id=client.username) |
+                    Q(client_name__icontains=client.name if hasattr(client, 'name') and client.name else '')
+                )
+                
+                # Get total goals
+                total_goals = TreatmentGoal.objects.filter(treatment_plan__in=treatment_plans).count()
+                
+                # Get achieved goals
+                achieved_goals = TreatmentGoal.objects.filter(
+                    treatment_plan__in=treatment_plans,
+                    is_achieved=True
+                ).count()
+                
+                # Calculate progress percentage
+                progress_percentage = (achieved_goals / total_goals * 100) if total_goals > 0 else 0
+                
+                client_progress_data.append({
+                    'client_id': client.id,
+                    'client_name': client.name or client.username or f'Client {client.id}',
+                    'goals_completed': achieved_goals,
+                    'total_goals': total_goals,
+                    'goals_display': f'{achieved_goals}/{total_goals} goals',
+                    'progress_percentage': round(progress_percentage, 0)
+                })
+            
+            # 6. TODAY'S SCHEDULE
+            today_schedule = []
+            today_sessions_list = TherapySession.objects.filter(
+                staff=user,
+                session_date=today
+            ).order_by('start_time')
+            
+            for session in today_sessions_list:
+                # Calculate duration in minutes
+                duration_minutes = 60
+                if session.duration:
+                    duration_minutes = int(session.duration.total_seconds() / 60)
+                elif session.start_time and session.end_time:
+                    start_dt = datetime.combine(session.session_date, session.start_time)
+                    end_dt = datetime.combine(session.session_date, session.end_time)
+                    if end_dt < start_dt:
+                        end_dt += timedelta(days=1)
+                    duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+                
+                # Get skills/tags from activities or goal progress
+                skills = []
+                activities = Activity.objects.filter(session=session)
+                for activity in activities:
+                    activity_name_lower = activity.activity_name.lower()
+                    if any(word in activity_name_lower for word in ['academic', 'math', 'reading', 'puzzle', 'writing']):
+                        if 'Academic Skills' not in skills:
+                            skills.append('Academic Skills')
+                    if any(word in activity_name_lower for word in ['motor', 'fine', 'gross', 'movement']):
+                        if 'Fine Motor' not in skills:
+                            skills.append('Fine Motor')
+                    if any(word in activity_name_lower for word in ['communication', 'verbal', 'speech', 'language']):
+                        if 'Communication' not in skills:
+                            skills.append('Communication')
+                    if any(word in activity_name_lower for word in ['social', 'interaction', 'peer', 'play']):
+                        if 'Social Skills' not in skills:
+                            skills.append('Social Skills')
+                    if any(word in activity_name_lower for word in ['behavior', 'management', 'task']):
+                        if 'Behavior Management' not in skills:
+                            skills.append('Behavior Management')
+                    if any(word in activity_name_lower for word in ['task', 'completion', 'follow']):
+                        if 'Task Completion' not in skills:
+                            skills.append('Task Completion')
+                
+                # If no skills from activities, try to get from skill progress
+                if not skills:
+                    # Get treatment plans for this client
+                    client_treatment_plans = TreatmentPlan.objects.filter(
+                        Q(client_id=str(session.client.id)) |
+                        Q(client_id=session.client.username) |
+                        Q(client_name__icontains=session.client.name if hasattr(session.client, 'name') and session.client.name else '')
+                    )
+                    
+                    skill_progress = SkillProgress.objects.filter(
+                        client=session.client,
+                        treatment_plan__in=client_treatment_plans
+                    ).values_list('skill_category', flat=True).distinct()
+                    
+                    skill_category_map = {
+                        'academic_skills': 'Academic Skills',
+                        'motor_skills': 'Fine Motor',
+                        'communication': 'Communication',
+                        'social_interaction': 'Social Skills',
+                        'behavior_management': 'Behavior Management',
+                        'daily_living': 'Task Completion'
+                    }
+                    
+                    for cat in skill_progress:
+                        if cat in skill_category_map and skill_category_map[cat] not in skills:
+                            skills.append(skill_category_map[cat])
+                
+                # Default skills if still empty
+                if not skills:
+                    skills = ['General Therapy']
+                
+                session_status = 'Complete' if session.status == 'completed' else 'Upcoming' if session.status in ['scheduled', 'in_progress'] else session.status.title()
+                status_color = 'green' if session.status == 'completed' else 'blue' if session.status in ['scheduled', 'in_progress'] else 'gray'
+                
+                today_schedule.append({
+                    'id': session.id,
+                    'time': session.start_time.strftime('%I:%M %p'),
+                    'duration_minutes': duration_minutes,
+                    'duration_display': f'{duration_minutes} Min',
+                    'status': session_status,
+                    'status_color': status_color,
+                    'client_name': session.client.name or session.client.username,
+                    'client_id': session.client.id,
+                    'location': session.location or 'Home Visit',
+                    'skills': skills[:3]  # Limit to 3 skills
+                })
+            
+            # 7. RECENT ALERTS
+            recent_alerts = []
+            alerts = Alert.objects.filter(user=user).order_by('-created_at')[:3]
+            
+            for alert in alerts:
+                # Calculate time ago
+                time_diff = now - alert.created_at
+                if time_diff.days > 0:
+                    time_ago = f'{time_diff.days} Day{"s" if time_diff.days > 1 else ""} Ago'
+                elif time_diff.seconds >= 3600:
+                    hours = time_diff.seconds // 3600
+                    time_ago = f'{hours} Hour{"s" if hours > 1 else ""} Ago'
+                else:
+                    minutes = time_diff.seconds // 60
+                    time_ago = f'{minutes} Minute{"s" if minutes > 1 else ""} Ago' if minutes > 0 else 'Just Now'
+                
+                # Determine severity based on alert type
+                severity = 'Medium'
+                if alert.type == 'PAYROLL' or 'expire' in alert.message.lower() or 'required' in alert.message.lower():
+                    severity = 'High'
+                elif alert.type == 'NOTE':
+                    severity = 'Medium'
+                else:
+                    severity = 'Low'
+                
+                recent_alerts.append({
+                    'id': alert.id,
+                    'severity': severity,
+                    'message': alert.message,
+                    'time_ago': time_ago,
+                    'type': alert.type,
+                    'is_read': alert.is_read,
+                    'created_at': alert.created_at.isoformat()
+                })
+            
+            # Prepare final response
+            return Response({
+                'welcome': welcome_data,
+                'key_metrics': key_metrics,
+                'quick_actions': quick_actions,
+                'weekly_sessions': {
+                    'title': 'Weekly Sessions',
+                    'subtitle': 'Sessions and hours this week',
+                    'data': weekly_sessions_data,
+                    'filter': 'Last Week'  # Can be made dynamic
+                },
+                'client_progress_overview': {
+                    'title': 'Client Progress Overview',
+                    'subtitle': 'Progress by assigned clients',
+                    'data': client_progress_data
+                },
+                'todays_schedule': {
+                    'title': "Today's Schedule",
+                    'subtitle': 'Your therapy sessions for today',
+                    'sessions': today_schedule
+                },
+                'recent_alerts': {
+                    'title': 'Recent Alerts',
+                    'subtitle': 'Important updates and reminders',
+                    'alerts': recent_alerts
+                },
+                'calculated_at': tz.now().isoformat()
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            import traceback
+            return Response({
+                'error': str(e),
+                'traceback': traceback.format_exc(),
+                'message': 'Failed to retrieve RBT dashboard data'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
